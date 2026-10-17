@@ -1931,7 +1931,9 @@ def main() -> int:
                 if not start_serve:
                     raise
                 logger.exception(
-                    "券商持仓导入失败，Web/API 服务继续运行: %s",
+                    "Futu 持仓导入失败，Web/API 服务继续运行: %s"
+                    if isinstance(exc, FutuPortfolioError)
+                    else "IBKR 持仓导入失败，Web/API 服务继续运行: %s",
                     exc,
                 )
             else:

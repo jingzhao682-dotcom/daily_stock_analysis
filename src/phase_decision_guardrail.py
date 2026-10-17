@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from src.analysis_context_pack_prompt import CORE_DEGRADED_STATUSES
 from src.market_phase_summary import render_market_phase_summary
 from src.report_language import localize_confidence_level, normalize_report_language
+from src.schemas.decision_action import localize_action_label
 
 if TYPE_CHECKING:
     from src.analyzer import AnalysisResult
@@ -153,7 +154,9 @@ def apply_phase_decision_guardrails(
     phase_decision["data_limitations"] = merged_limitations
 
     phase = _safe_text(phase_summary.get("phase")) if phase_summary else ""
-    core_degraded = _has_core_degraded_block(overview)
+    snapshot = getattr(result, "market_snapshot", None)
+    snapshot_degraded = isinstance(snapshot, Mapping) and snapshot.get("data_quality") == "partial"
+    core_degraded = _has_core_degraded_block(overview) or snapshot_degraded
     initially_high_confidence = _is_high_confidence(getattr(result, "confidence_level", ""))
 
     if core_degraded and initially_high_confidence:
@@ -195,6 +198,69 @@ def apply_phase_decision_guardrails(
         _replace_postmarket_recap_fields(result, phase_decision, language=language)
         _append_reason(phase_decision, reason)
         adjustments.append("postmarket_recap_wording_adjusted")
+
+    if core_degraded:
+        reason = _reason_text(
+            language,
+            en="Core data is limited. Treat technical readings as observations; verify data before trading. "
+               "Do not change long-term allocations solely on this report.",
+            zh="核心数据受限，技术读数仅作观察，核验数据后再决策；不应仅据本报告调整长期配置。",
+            ko="핵심 데이터가 제한됩니다. 기술 지표는 관찰용이며 거래 전 데이터를 확인하세요. "
+               "이 보고서만으로 장기 자산배분을 변경하지 마세요.",
+        )
+        # Use the existing action taxonomy and persisted guardrail reason so
+        # downstream score/action alignment cannot resurrect a buy/sell badge.
+        result.operation_advice = localize_action_label("watch", language)
+        result.decision_type = "hold"
+        result.action = "watch"
+        result.action_label = localize_action_label("watch", language)
+        if snapshot_degraded:
+            # The headline otherwise reuses an unverified provider percentage
+            # beside the corrected/disclosed snapshot table.
+            result.change_pct = None
+        result.analysis_summary = reason
+        result.buy_reason = reason
+        result.risk_warning = reason
+        dashboard["core_conclusion"] = {
+            "signal_type": result.action_label,
+            "one_sentence": reason,
+            "position_advice": {"no_position": reason, "has_position": reason},
+        }
+        # Execution levels/checklists can retain the original strong advice;
+        # do not publish them after downgrading the headline action.
+        dashboard["battle_plan"] = {}
+        dashboard["decision_stability"] = {"applied": True, "reason": reason}
+        if not has_non_intraday_action:
+            phase_decision["immediate_action"] = reason
+        _append_reason(phase_decision, reason)
+        adjustments.append("action_downgraded_core_data_degraded")
+
+    if (
+        getattr(result, "news_result_count_known", False)
+        and not getattr(result, "news_evidence_present", False)
+    ):
+        no_news = _reason_text(
+            language,
+            en="No news evidence available; news catalysts and sentiment are unverified.",
+            zh="暂无新闻证据，新闻催化与舆情判断未经核验。",
+            ko="뉴스 근거가 없어 뉴스 촉매와 심리 판단은 확인되지 않았습니다.",
+        )
+        for key in ("news_summary", "market_sentiment", "hot_topics"):
+            if getattr(result, key, None):
+                setattr(result, key, no_news)
+        intelligence = dashboard.get("intelligence")
+        if isinstance(intelligence, dict):
+            for key in ("latest_news", "sentiment_summary"):
+                if intelligence.get(key):
+                    intelligence[key] = no_news
+            if intelligence.get("positive_catalysts"):
+                intelligence["positive_catalysts"] = []
+        attribution = dashboard.get("signal_attribution")
+        if isinstance(attribution, dict) and attribution.get("news_sentiment") not in (None, 0):
+            # Contribution weights cannot be inferred again without evidence.
+            # Remove the attribution instead of fabricating replacement weights.
+            dashboard.pop("signal_attribution", None)
+            adjustments.append("unsupported_news_attribution_removed")
 
     if adjustments:
         phase_decision["data_limitations"] = _merge_limitations(

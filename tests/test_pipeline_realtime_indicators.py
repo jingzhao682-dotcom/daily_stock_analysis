@@ -306,6 +306,8 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
             amount=None,
             fetched_at="2026-05-31T10:00:05+00:00",
             provider_timestamp="2026-05-31T10:00:00+00:00",
+            pre_close=15.57,
+            currency="CNY",
             is_stale=False,
             stale_seconds=5,
             fallback_from="efinance",
@@ -328,6 +330,9 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
         )
 
         self.assertEqual(enhanced["realtime"]["source"], "tencent")
+        self.assertEqual(enhanced["realtime"]["pre_close"], 15.57)
+        self.assertEqual(enhanced["realtime"]["currency"], "CNY")
+        self.assertEqual(enhanced["today"]["pre_close"], 15.57)
         self.assertEqual(enhanced["realtime"]["fetched_at"], "2026-05-31T10:00:05+00:00")
         self.assertEqual(enhanced["realtime"]["provider_timestamp"], "2026-05-31T10:00:00+00:00")
         self.assertIs(enhanced["realtime"]["is_stale"], False)

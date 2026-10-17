@@ -1051,6 +1051,8 @@ class StockAnalysisPipeline:
                 'name': getattr(realtime_quote, 'name', ''),
                 'price': getattr(realtime_quote, 'price', None),
                 'change_pct': getattr(realtime_quote, 'change_pct', None),
+                'pre_close': getattr(realtime_quote, 'pre_close', None),
+                'currency': getattr(realtime_quote, 'currency', None),
                 'volume_ratio': volume_ratio,
                 'volume_ratio_desc': self._describe_volume_ratio(volume_ratio) if volume_ratio else '无数据',
                 'turnover_rate': getattr(realtime_quote, 'turnover_rate', None),
@@ -1124,6 +1126,7 @@ class StockAnalysisPipeline:
                 fallback_from = getattr(realtime_quote, 'fallback_from', None)
                 realtime_today = {
                     'close': price,
+                    'pre_close': getattr(realtime_quote, 'pre_close', None),
                     'open': open_p,
                     'high': high_p,
                     'low': low_p,
@@ -1157,6 +1160,7 @@ class StockAnalysisPipeline:
                 if fallback_from is not None:
                     realtime_today['fallback_from'] = fallback_from
                 realtime_owned_fields = {
+                    'pre_close',
                     'open', 'high', 'low', 'close',
                     'volume', 'amount', 'pct_chg', 'pctChg',
                     'date', 'data_source', 'dataSource', 'source',

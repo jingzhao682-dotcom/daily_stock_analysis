@@ -69,6 +69,7 @@ class TestFetchYfTickerData(unittest.TestCase):
         self.assertIn('volume', result)
         self.assertIn('amount', result)
         self.assertIn('amplitude', result)
+        self.assertEqual(result['trade_date'], mock_hist.index[-1].date().isoformat())
 
     def test_returns_none_when_history_empty(self):
         """history 为空时应返回 None"""
@@ -78,16 +79,22 @@ class TestFetchYfTickerData(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_single_row_history_uses_same_as_prev(self):
-        """仅一行数据时 prev_close 等于 current，change_pct 为 0"""
+    def test_single_row_history_is_unavailable_without_prior_close(self):
+        """只有一行数据时无法验证昨收，不能伪造零涨跌幅。"""
         mock_hist = _make_mock_hist(close=5000.0, prev_close=5000.0)
         mock_hist = mock_hist.iloc[[-1]]
         mock_yf = _make_mock_yf(mock_hist)
 
         result = self.fetcher._fetch_yf_ticker_data(mock_yf, '^GSPC', '标普500指数', 'SPX')
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result['change_pct'], 0.0)
+        self.assertIsNone(result)
+
+    def test_invalid_prior_close_is_not_reported_as_zero_return(self):
+        for prior in (0.0, -1.0, float('nan'), float('inf')):
+            with self.subTest(prior=prior):
+                hist = _make_mock_hist(close=5000.0, prev_close=prior)
+                result = self.fetcher._fetch_yf_ticker_data(_make_mock_yf(hist), '^GSPC', 'S&P', 'SPX')
+                self.assertIsNone(result)
 
 
 class TestGetUsMainIndices(unittest.TestCase):

@@ -16,6 +16,7 @@ YfinanceFetcher - 兜底数据源 (Priority 4)
 
 import csv
 import logging
+import math
 from datetime import datetime
 from io import StringIO
 from typing import Optional, List, Dict, Any
@@ -321,12 +322,14 @@ class YfinanceFetcher(BaseFetcher):
         ticker = yf.Ticker(yf_code)
         # 取近两日数据以计算涨跌幅
         hist = ticker.history(period='2d')
-        if hist.empty:
+        if hist.empty or len(hist) < 2:
             return None
         today_row = hist.iloc[-1]
-        prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
+        prev_row = hist.iloc[-2]
         price = float(today_row['Close'])
         prev_close = float(prev_row['Close'])
+        if not all(math.isfinite(value) and value > 0 for value in (price, prev_close)):
+            return None
         change = price - prev_close
         change_pct = (change / prev_close) * 100 if prev_close else 0
         high = float(today_row['High'])
@@ -336,6 +339,7 @@ class YfinanceFetcher(BaseFetcher):
         return {
             'code': return_code,
             'name': name,
+            'trade_date': hist.index[-1].date().isoformat(),
             'current': price,
             'change': change,
             'change_pct': change_pct,

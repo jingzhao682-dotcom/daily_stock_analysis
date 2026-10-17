@@ -2147,6 +2147,9 @@ class NotificationService(
         report_language = self._get_report_language(result)
         labels = get_report_labels(report_language)
 
+        if snapshot.get('basis_note'):
+            lines.extend([str(snapshot['basis_note']), ""])
+
         lines.extend([
             f"### 📈 {labels['market_snapshot_heading']}",
             "",

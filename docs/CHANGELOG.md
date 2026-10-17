@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 排除 VIX 对股票指数均值和市场评分的污染，受限美股复盘降级为确定性观察；统一价格对展示并披露行情口径、时点和币种，核心数据受限时同步降级买卖动作与执行建议。
+- [测试] 新增日报 P0 回归用例，覆盖 VIX、无效行情、复权/实时昨收混用、价格冲突、信号降级及邮件展示路径。
+
 - [新功能] 新增 Opper（OpenAI Compatible 聚合网关）渠道预设：Web 模板、`.env.example` 示例、`00-daily-analysis.yml` 的 `LLM_OPPER_*` 映射与服务商文档同步补齐；Web「获取模型」在 `opper.ai` Base URL 下返回的 provider/model ID 保存为 `openai/<provider>/<model>` 网关路由，避免被误判为 LiteLLM 直连 provider；手动填写的值与已有渠道配置保持原有规则不变。
 - [新功能] 新增 API Route 渠道预设，复用 OpenAI-compatible 模型发现和连接测试，补齐每日分析 workflow 的渠道环境变量映射及中英文配置示例。
 

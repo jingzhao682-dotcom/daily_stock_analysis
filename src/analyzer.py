@@ -16,6 +16,8 @@ import math
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any, List, Tuple, Callable, Union
 
 import litellm
@@ -5153,10 +5155,26 @@ Output the complete Decision Dashboard in JSON format."""
         realtime = context.get('realtime', {}) or {}
         yesterday = context.get('yesterday', {}) or {}
 
-        prev_close = yesterday.get('close')
-        close = today.get('close')
-        high = today.get('high')
-        low = today.get('low')
+        def finite_number(value):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return None
+            return number if math.isfinite(number) else None
+
+        # A live unadjusted quote must use its own prior close, never an
+        # adjacent adjusted historical bar (dividends/splits can change it).
+        is_realtime_bar = str(today.get('data_source', '')).startswith('realtime:')
+        prev_close = finite_number(today.get('pre_close'))
+        if prev_close is None and not is_realtime_bar:
+            prev_close = finite_number(yesterday.get('close'))
+        if prev_close is not None and prev_close <= 0:
+            prev_close = None
+        close = finite_number(today.get('close'))
+        if close is not None and close <= 0:
+            close = None
+        high = finite_number(today.get('high'))
+        low = finite_number(today.get('low'))
 
         amplitude = None
         change_amount = None
@@ -5171,18 +5189,65 @@ Output the complete Decision Dashboard in JSON format."""
             except (TypeError, ValueError):
                 change_amount = None
 
+        # This is the return of the displayed price pair, not a correction to
+        # the provider's raw/adjusted return. Keep the raw value for diagnosis.
+        pair_pct = change_amount / prev_close * 100 if change_amount is not None else None
+        reported_pct = finite_number(today.get('pct_chg'))
+        inconsistent = (
+            pair_pct is not None and reported_pct is not None
+            and abs(pair_pct - reported_pct) > 0.02
+        )
+        limited = inconsistent or pair_pct is None
+        language = normalize_report_language(context.get('report_language', 'zh'))
+        note = (
+            'Price-pair return only; provider return differs or the matching prior close is unavailable. '
+            'Check adjustment basis and quote time before acting.'
+            if language != 'zh' else
+            '仅展示同列价格对的涨跌幅；供应商涨跌幅不一致或缺少匹配昨收，须核验复权口径与行情时点。'
+        )
+        market = detect_market(context.get('code'))
+        currency = realtime.get('currency') or {
+            'us': 'USD', 'hk': 'HKD', 'cn': 'CNY', 'jp': 'JPY', 'kr': 'KRW', 'tw': 'TWD',
+        }.get(market, 'N/A')
+        quote_timestamp = today.get('provider_timestamp') or realtime.get('provider_timestamp')
+        data_date = today.get('date') or context.get('date', '未知')
+        if is_realtime_bar:
+            # The synthetic realtime row is stamped with the run day, which
+            # can differ from the quote's exchange session on weekends.
+            data_date = 'N/A'
+            if quote_timestamp:
+                try:
+                    stamp = datetime.fromisoformat(str(quote_timestamp).replace('Z', '+00:00'))
+                    zone = {'us': 'America/New_York', 'hk': 'Asia/Hong_Kong', 'cn': 'Asia/Shanghai',
+                            'jp': 'Asia/Tokyo', 'kr': 'Asia/Seoul', 'tw': 'Asia/Taipei'}.get(market)
+                    if stamp.tzinfo is not None and zone:
+                        data_date = stamp.astimezone(ZoneInfo(zone)).date().isoformat()
+                except (TypeError, ValueError):
+                    pass
+
         snapshot = {
-            "date": context.get('date', '未知'),
+            "date": data_date,
+            "report_date": context.get('date', '未知'),
+            "currency": currency,
+            "quote_timestamp": quote_timestamp,
+            "price_basis": "quote_prior_close" if is_realtime_bar else "displayed_daily_price_pair",
+            "data_quality": "partial" if limited else "ok",
+            "consistency_note": note if limited else None,
+            "reported_pct_chg": self._format_percent(reported_pct),
             "close": self._format_price(close),
             "open": self._format_price(today.get('open')),
             "high": self._format_price(high),
             "low": self._format_price(low),
             "prev_close": self._format_price(prev_close),
-            "pct_chg": self._format_percent(today.get('pct_chg')),
+            "pct_chg": self._format_percent(pair_pct),
             "change_amount": self._format_price(change_amount),
             "amplitude": self._format_percent(amplitude),
             "volume": self._format_volume(today.get('volume')),
-            "amount": self._format_amount(today.get('amount')),
+            "amount": (
+                self._format_amount(finite_number(today.get('amount')), language)
+                if currency == 'CNY' or today.get('amount') is None else
+                f"{self._format_amount(finite_number(today.get('amount')), 'en')} {currency}"
+            ),
         }
 
         if realtime:
@@ -5192,6 +5257,26 @@ Output the complete Decision Dashboard in JSON format."""
                 "turnover_rate": self._format_percent(realtime.get('turnover_rate')),
                 "source": getattr(realtime.get('source'), 'value', realtime.get('source', 'N/A')),
             })
+
+        source = today.get('data_source') or snapshot.get('source') or 'N/A'
+        timestamp = snapshot['quote_timestamp'] or 'N/A'
+        basis_label = (
+            ('同报价昨收' if is_realtime_bar else '同列日线价格对')
+            if language == 'zh' else
+            ('matching quote prior close' if is_realtime_bar else 'displayed daily price pair')
+        )
+        if language == 'zh':
+            snapshot['basis_note'] = (
+                f"币种：{currency}；数据日期：{snapshot['date']}；行情时点：{timestamp}；"
+                f"来源：{source}；口径：{basis_label}。"
+            )
+        else:
+            snapshot['basis_note'] = (
+                f"Currency: {currency}; data date: {snapshot['date']}; quote time: {timestamp}; "
+                f"source: {source}; basis: {basis_label}."
+            )
+        if limited:
+            snapshot['basis_note'] += f" {note} ({snapshot['reported_pct_chg']})"
 
         return snapshot
 

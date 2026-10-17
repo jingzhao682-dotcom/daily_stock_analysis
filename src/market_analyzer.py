@@ -11,6 +11,7 @@
 """
 
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -72,6 +73,7 @@ class MarketIndex:
     volume: float = 0.0          # 成交量（手）
     amount: float = 0.0          # 成交额（元）
     amplitude: float = 0.0       # 振幅(%)
+    trade_date: Optional[str] = None  # 供应商实际交易日，不由报告日推测
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -86,6 +88,7 @@ class MarketIndex:
             'volume': self.volume,
             'amount': self.amount,
             'amplitude': self.amplitude,
+            'trade_date': self.trade_date,
         }
 
 
@@ -562,6 +565,13 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         # 1. 获取主要指数行情（按 region 切换 A 股/美股）
         overview.indices = self._get_main_indices()
 
+        if self.region == "us" and overview.indices:
+            # Yahoo bars carry the exchange session date. Do not guess a
+            # previous weekday: holidays and mixed sessions need provenance.
+            dates = {idx.trade_date for idx in overview.indices}
+            if len(dates) == 1 and None not in dates:
+                overview.date = next(iter(dates))
+
         # 2. 获取涨跌统计（A 股有，美股无等效数据）
         if self.profile.has_market_stats:
             self._get_market_statistics(overview)
@@ -601,7 +611,8 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                         prev_close=item['prev_close'],
                         volume=item['volume'],
                         amount=item['amount'],
-                        amplitude=item['amplitude']
+                        amplitude=item['amplitude'],
+                        trade_date=item.get('trade_date'),
                     )
                     indices.append(index)
 
@@ -804,6 +815,13 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 error_message=backend_error,
             )
             raise backend_error
+
+        if (
+            self.region == "us"
+            and self._build_market_light_scores(overview)["data_quality"] != "ok"
+        ):
+            logger.warning("[大盘] action=generate_review status=fallback_template reason=limited_evidence")
+            return self._generate_template_review(overview, news)
 
         if not self.analyzer or not self.analyzer.is_available():
             logger.warning(
@@ -1261,6 +1279,11 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         else:
             status = "red"
 
+        # A partial index-only signal cannot authorize an offensive portfolio stance.
+        quality = str(scores["data_quality"])
+        if quality != "ok" and status == "green":
+            status = "yellow"
+
         if self._get_review_language() == "en":
             label_map = {
                 "green": "risk-on",
@@ -1285,6 +1308,20 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 "red": "风险偏高，优先控制回撤，避免追高弱反弹。",
             }
             reasons = self._build_market_light_reasons_zh(overview, score)
+
+        if quality != "ok":
+            limited = (
+                "Limited data: this is an index observation, not a portfolio allocation signal. "
+                "Verify inputs before changing long-term holdings."
+                if self._get_review_language() == "en"
+                else "数据受限：仅作指数观察，不作为组合仓位信号；调整长期持仓前须核验数据。"
+            )
+            guidance_map[status] = limited
+            if quality == "unavailable":
+                status = "yellow"
+                temperature_label = "unavailable" if self._get_review_language() == "en" else "数据不足"
+                label_map[status] = "unavailable" if self._get_review_language() == "en" else "数据不足"
+                guidance_map[status] = limited
 
         snapshot = MarketLightSnapshot(
             region=self.region,
@@ -1311,7 +1348,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 reasons.append(f"上涨家数占比 {up_ratio:.0%}，亏钱效应较强")
             else:
                 reasons.append(f"上涨家数占比 {up_ratio:.0%}，市场分化")
-        index_changes = [idx.change_pct for idx in overview.indices if idx.change_pct is not None]
+        index_changes = self._equity_index_changes(overview)
         if index_changes:
             avg_change = sum(index_changes) / len(index_changes)
             reasons.append(f"主要指数平均涨跌幅 {avg_change:+.2f}%")
@@ -1334,7 +1371,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 reasons.append(f"advancers ratio {up_ratio:.0%}, downside pressure dominates")
             else:
                 reasons.append(f"advancers ratio {up_ratio:.0%}, breadth is mixed")
-        index_changes = [idx.change_pct for idx in overview.indices if idx.change_pct is not None]
+        index_changes = self._equity_index_changes(overview)
         if index_changes:
             avg_change = sum(index_changes) / len(index_changes)
             reasons.append(f"average major-index change {avg_change:+.2f}%")
@@ -1504,6 +1541,35 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             return "缩量观望"
         return "暂无数据"
 
+    def _equity_index_changes(self, overview: MarketOverview) -> List[float]:
+        """Use valid equity observations only; volatility is not an equity return."""
+        from data_provider.us_index_mapping import get_us_index_yf_symbol
+
+        changes = []
+        seen = set()
+        sessions = set()
+        for idx in overview.indices:
+            code = str(idx.code or "").strip().upper()
+            mapped = get_us_index_yf_symbol(code)
+            canonical = mapped[0] or code
+            if canonical == "^VIX" or (self.region == "us" and not mapped[0]):
+                continue
+            if canonical in seen:
+                continue
+            try:
+                change = float(idx.change_pct)
+                current = float(idx.current)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(change) or not math.isfinite(current) or current <= 0:
+                continue
+            seen.add(canonical)
+            if idx.trade_date:
+                sessions.add(idx.trade_date)
+            changes.append(change)
+        # A cross-session basket is not a daily market return.
+        return changes if len(sessions) <= 1 else []
+
     def _build_market_light_scores(self, overview: MarketOverview) -> Dict[str, Any]:
         """Build the canonical Market Light scores used by reports and alerts."""
 
@@ -1513,7 +1579,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if breadth_available:
             breadth_score = int(overview.up_count / participants * 100)
 
-        index_changes = [idx.change_pct for idx in overview.indices if idx.change_pct is not None]
+        index_changes = self._equity_index_changes(overview)
         index_available = bool(overview.indices and index_changes)
         index_score = 50
         if index_available:
@@ -1892,6 +1958,20 @@ Output the report content directly, no extra commentary.
     def _generate_template_review(self, overview: MarketOverview, news: List) -> str:
         """使用模板生成复盘报告（无大模型时的备选方案）"""
         template_language = self._get_template_review_language()
+        limited = self.region == "us" and (
+            self._build_market_light_scores(overview)["data_quality"] != "ok" or not news
+        )
+        strategy_block = self._get_strategy_markdown_block(template_language)
+        if limited:
+            strategy_block = (
+                "### Decision Boundary\n"
+                "- Limited evidence: observations only. Verify quote dates, price basis and news before acting.\n"
+                "- No portfolio/cash target is inferred; retain the established long-term allocation plan."
+                if template_language == "en" else
+                "### 决策边界\n"
+                "- 证据受限，仅作行情观察；核验行情日期、价格口径与新闻后再决策。\n"
+                "- 不推导组合仓位或现金比例，不应仅据本报告改变既定长期配置。"
+            )
         mood_code = self.profile.mood_index_code
         # 根据 mood_index_code 查找对应指数
         # cn: mood_code="000001"，idx.code 可能为 "sh000001"（以 mood_code 结尾）
@@ -1966,7 +2046,9 @@ Today's {self._get_market_scope_name(template_language)} showed **{market_mood}*
 ### 5. Risk Alerts
 Market conditions can change quickly. The data above is for reference only and does not constitute investment advice.
 
-{self._get_strategy_markdown_block(template_language)}
+{self._build_news_block(news) if news else '- No news evidence available.'}
+
+{strategy_block}
 
 ---
 *Review Time: {datetime.now().strftime('%H:%M')}*
@@ -2025,9 +2107,9 @@ Market conditions can change quickly. The data above is for reference only and d
 {funds_section}
 
 ### 五、消息催化
-- 暂无可用新闻时，应降低对题材持续性的确定性判断。
+{self._build_news_block(news) if news else '- 暂无新闻证据，不推断新闻催化或资金流向。'}
 
-{self._get_strategy_markdown_block(template_language)}
+{strategy_block}
 
 ### 七、风险提示
 - 市场有风险，投资需谨慎。以上数据仅供参考，不构成投资建议。

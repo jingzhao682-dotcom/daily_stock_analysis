@@ -1728,6 +1728,12 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             )
 
             pipeline = StockAnalysisPipeline(config=mock_cfg)
+            # These tests isolate action ordering with complete core-data evidence.
+            # Missing-data downgrade is covered by test_p0_report_quality.
+            pipeline._build_analysis_context_pack_outputs = MagicMock(return_value=(
+                "", {"blocks": [{"key": key, "status": "ok"}
+                                for key in ("quote", "daily_bars", "technical")]},
+            ))
             pipeline.search_service.is_available = False
             pipeline.db.save_analysis_history.return_value = 2044
             pipeline._extract_decision_signal_after_history_save = MagicMock()
@@ -1840,6 +1846,12 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             )
 
             pipeline = StockAnalysisPipeline(config=mock_cfg)
+            # These tests isolate action ordering with complete core-data evidence.
+            # Missing-data downgrade is covered by test_p0_report_quality.
+            pipeline._build_analysis_context_pack_outputs = MagicMock(return_value=(
+                "", {"blocks": [{"key": key, "status": "ok"}
+                                for key in ("quote", "daily_bars", "technical")]},
+            ))
             pipeline.search_service.is_available = False
             pipeline.db.save_analysis_history.return_value = 2044
             pipeline._extract_decision_signal_after_history_save = MagicMock()
@@ -2019,6 +2031,12 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             from src.enums import ReportType
             from src.stock_analyzer import TrendAnalysisResult, TrendStatus, BuySignal
             pipeline = StockAnalysisPipeline(config=mock_cfg)
+            # These tests isolate action ordering with complete core-data evidence.
+            # Missing-data downgrade is covered by test_p0_report_quality.
+            pipeline._build_analysis_context_pack_outputs = MagicMock(return_value=(
+                "", {"blocks": [{"key": key, "status": "ok"}
+                                for key in ("quote", "daily_bars", "technical")]},
+            ))
 
             agent_result = AgentResult(
                 success=True,
@@ -2275,6 +2293,12 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             from src.services.daily_market_context import DailyMarketContext
 
             pipeline = StockAnalysisPipeline(config=mock_cfg)
+            # These tests isolate action ordering with complete core-data evidence.
+            # Missing-data downgrade is covered by test_p0_report_quality.
+            pipeline._build_analysis_context_pack_outputs = MagicMock(return_value=(
+                "", {"blocks": [{"key": key, "status": "ok"}
+                                for key in ("quote", "daily_bars", "technical")]},
+            ))
             pipeline.search_service.is_available = False
             pipeline.db.save_analysis_history.return_value = 1
             pipeline._extract_decision_signal_after_history_save = MagicMock()

@@ -1580,6 +1580,9 @@ class HistoryService:
         if not snapshot:
             return
 
+        if snapshot.get('basis_note'):
+            lines.extend([str(snapshot['basis_note']), ""])
+
         lines.extend([
             f"### 📈 {labels['market_snapshot_heading']}",
             "",
@@ -1588,8 +1591,12 @@ class HistoryService:
         ])
 
         # Price info
-        current_price = snapshot.get('price') or snapshot.get('current_price') or result.current_price
-        change_pct = snapshot.get('change_pct') or snapshot.get('pct_chg') or result.change_pct
+        # Keep a displayed return attached to its own price pair, rather than
+        # combining a historical close return with a newer realtime price.
+        current_price = snapshot.get('close') or snapshot.get('price') or snapshot.get('current_price') or result.current_price
+        change_pct = snapshot.get('pct_chg') if snapshot.get('close') else (
+            snapshot.get('change_pct') or result.change_pct
+        )
         if current_price is not None:
             current_str = HistoryService._safe_format_number(current_price, ".2f")
             if change_pct is not None:
@@ -1599,10 +1606,12 @@ class HistoryService:
                     change_str = f"{HistoryService._safe_format_number(change_pct, '+.2f')}%"
             else:
                 change_str = "--"
-            lines.append(f"| {labels['current_price_label']} | **{current_str}** ({change_str}) |")
+            price_label = labels['close_label'] if snapshot.get('close') else labels['current_price_label']
+            lines.append(f"| {price_label} | **{current_str}** ({change_str}) |")
 
         # Other metrics
         metrics = [
+            (labels['prev_close_label'], "prev_close", ".2f"),
             (labels['open_label'], "open", ".2f"),
             (labels['high_label'], "high", ".2f"),
             (labels['low_label'], "low", ".2f"),

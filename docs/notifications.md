@@ -73,7 +73,7 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 | `EMAIL_SENDER` | minimal | email | Variable or Secret | - |
 | `EMAIL_PASSWORD` | minimal | email | Secret | - |
 | `EMAIL_RECEIVERS` | advanced | email | Variable or Secret | - |
-| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `daily_stock_analysis股票分析助手` |
+| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `美股与贵金属投资研究日报` |
 | `PUSHOVER_USER_KEY` | minimal | pushover | Secret | - |
 | `PUSHOVER_API_TOKEN` | minimal | pushover | Secret | - |
 | `NTFY_URL` | minimal | ntfy | Secret | - |
@@ -101,13 +101,13 @@ Discord 长报告发送复用现有分片链路：单条 `content` 运行时不�
 | `SLACK_WEBHOOK_URL` | minimal | slack | Secret | - |
 | `SLACK_BOT_TOKEN` | minimal | slack | Secret | - |
 | `SLACK_CHANNEL_ID` | minimal | slack | Secret | - |
-| `NOTIFICATION_REPORT_CHANNELS` | advanced | routing | Variable or Secret | - |
+| `NOTIFICATION_REPORT_CHANNELS` | advanced | routing | Variable or Secret | `email` |
 | `NOTIFICATION_ALERT_CHANNELS` | advanced | routing | Variable or Secret | - |
 | `NOTIFICATION_SYSTEM_ERROR_CHANNELS` | advanced | routing | Variable or Secret | - |
 | `NOTIFICATION_DEDUP_TTL_SECONDS` | advanced | noise | Variable or Secret | `0` |
 | `NOTIFICATION_COOLDOWN_SECONDS` | advanced | noise | Variable or Secret | `0` |
 | `NOTIFICATION_QUIET_HOURS` | advanced | noise | Variable or Secret | - |
-| `NOTIFICATION_TIMEZONE` | advanced | noise | Variable or Secret | - |
+| `NOTIFICATION_TIMEZONE` | advanced | noise | Variable or Secret | `Asia/Shanghai` |
 | `NOTIFICATION_MIN_SEVERITY` | advanced | noise | Variable or Secret | - |
 | `NOTIFICATION_DAILY_DIGEST_ENABLED` | advanced | noise | Variable or Secret | `false` |
 

@@ -376,7 +376,7 @@ jobs:
           EMAIL_SENDER: ${{ vars.EMAIL_SENDER || secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS || secrets.EMAIL_RECEIVERS }}
-          EMAIL_SENDER_NAME: ${{ vars.EMAIL_SENDER_NAME || secrets.EMAIL_SENDER_NAME || 'daily_stock_analysis股票分析助手' }}
+          EMAIL_SENDER_NAME: ${{ vars.EMAIL_SENDER_NAME || secrets.EMAIL_SENDER_NAME || '美股与贵金属投资研究日报' }}
           
           # 方式五：Pushover
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
@@ -427,7 +427,7 @@ jobs:
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
           # 通知路由策略（留空时保持全部已配置渠道）
-          NOTIFICATION_REPORT_CHANNELS: ${{ vars.NOTIFICATION_REPORT_CHANNELS || secrets.NOTIFICATION_REPORT_CHANNELS }}
+          NOTIFICATION_REPORT_CHANNELS: ${{ vars.NOTIFICATION_REPORT_CHANNELS || secrets.NOTIFICATION_REPORT_CHANNELS || 'email' }}
           NOTIFICATION_ALERT_CHANNELS: ${{ vars.NOTIFICATION_ALERT_CHANNELS || secrets.NOTIFICATION_ALERT_CHANNELS }}
           NOTIFICATION_SYSTEM_ERROR_CHANNELS: ${{ vars.NOTIFICATION_SYSTEM_ERROR_CHANNELS || secrets.NOTIFICATION_SYSTEM_ERROR_CHANNELS }}
           NOTIFICATION_DEDUP_TTL_SECONDS: ${{ vars.NOTIFICATION_DEDUP_TTL_SECONDS || secrets.NOTIFICATION_DEDUP_TTL_SECONDS || '0' }}
@@ -480,6 +480,22 @@ jobs:
             exit 1
           fi
 
+          # 美股试运行：扩展黄金 GLD、白银 SLV、SpaceX SPCX。
+          # 私有基础观察名单仍从 GitHub Actions Variables / Secrets 中读取。
+          # 去重避免用户已把扩展标的加入 STOCK_LIST 时重复分析。
+          for extra_symbol in GLD SLV SPCX; do
+            if [[ ",${STOCK_LIST}," != *",${extra_symbol},"* ]]; then
+              STOCK_LIST="${STOCK_LIST},${extra_symbol}"
+            fi
+          done
+          export STOCK_LIST
+
+          # 已选择邮件为唯一正式推送渠道；凭据未配置则明确失败，而不空跑。
+          if [ -z "${EMAIL_SENDER:-}" ] || [ -z "${EMAIL_PASSWORD:-}" ]; then
+            echo "::error::邮件推送尚未配置：请添加 EMAIL_SENDER 与 EMAIL_PASSWORD（Gmail 应用专用密码），切勿使用账户登录密码。"
+            exit 1
+          fi
+
           # 处理 LITELLM YAML 配置文件
           if [ -n "$LITELLM_CONFIG_YAML" ] && [ -n "$LITELLM_CONFIG" ]; then
             echo "📝 使用 GitHub Actions Secrets/Variables 中的 LITELLM_CONFIG_YAML 配置"
@@ -498,7 +514,8 @@ jobs:
           echo "=========================================="
           echo "⏰ 时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
           echo "🎯 运行模式: $MODE"
-          echo "📊 自选股: $STOCK_LIST"
+          IFS=',' read -r -a pilot_symbols <<< "$STOCK_LIST"
+          echo "📊 自选股数量: ${#pilot_symbols[@]}（具体名单不输出到 Actions 日志）"
           echo "📝 报告类型: $REPORT_TYPE"
           echo ""
           echo "=========================================="

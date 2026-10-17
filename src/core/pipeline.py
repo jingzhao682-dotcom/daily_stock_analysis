@@ -38,6 +38,7 @@ from src.analyzer import (
     populate_decision_action_fields,
     stabilize_decision_with_structure,
 )
+from src.brokers.ibkr.flex import position_context as ibkr_position_context, format_position_observation
 from src.notification import NotificationService, NotificationChannel
 from src.schemas.decision_action import normalize_decision_action
 from src.report_language import (
@@ -462,9 +463,7 @@ class StockAnalysisPipeline:
         """
         stock_name = code
         try:
-            portfolio_context = getattr(self, "portfolio_context", None)
-            if not isinstance(portfolio_context, dict):
-                portfolio_context = None
+            portfolio_context = self._portfolio_context_for_code(code)
             is_index = (
                 analysis_target is not None
                 and analysis_target.asset_type == ParseStatus.INDEX
@@ -908,6 +907,7 @@ class StockAnalysisPipeline:
                     result,
                     market_phase_summary=market_phase_summary,
                     analysis_context_pack_overview=analysis_context_pack_overview,
+                    portfolio_context=portfolio_context,
                     report_language=getattr(result, "report_language", None)
                     or getattr(self.config, "report_language", "zh"),
                 )
@@ -931,6 +931,7 @@ class StockAnalysisPipeline:
                     result.market_structure_context = market_structure_context
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
+                self._append_portfolio_observation(result, portfolio_context, report_language)
                 self._refresh_decision_action_for_final_result(
                     result,
                     report_type=report_type.value,
@@ -1743,6 +1744,7 @@ class StockAnalysisPipeline:
                     result,
                     market_phase_summary=market_phase_summary,
                     analysis_context_pack_overview=analysis_context_pack_overview,
+                    portfolio_context=portfolio_context,
                     report_language=getattr(result, "report_language", None)
                     or getattr(self.config, "report_language", "zh"),
                 )
@@ -1802,6 +1804,7 @@ class StockAnalysisPipeline:
                     result.market_structure_context = market_structure_context
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
+                self._append_portfolio_observation(result, portfolio_context, report_language)
                 final_action = normalize_decision_action(getattr(result, "action", None))
                 if isinstance(result.dashboard, dict):
                     result.dashboard.pop("agent_disagreement_explanation", None)
@@ -3161,6 +3164,23 @@ class StockAnalysisPipeline:
             portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
         )
 
+    def _portfolio_context_for_code(self, code: str) -> Optional[Dict[str, Any]]:
+        context = getattr(self, "portfolio_context", None)
+        if not isinstance(context, dict):
+            return None
+        if context.get("source") == "ibkr_flex" and "positions" in context:
+            return ibkr_position_context(context, code)
+        return dict(context)
+
+    @staticmethod
+    def _append_portfolio_observation(result: AnalysisResult, context: Optional[Dict[str, Any]], language: str) -> None:
+        note = format_position_observation(context, language=language)
+        if note:
+            result.analysis_summary = f"{result.analysis_summary or ''}\n\n{note}"
+            core = result.dashboard.get("core_conclusion") if isinstance(result.dashboard, dict) else None
+            if isinstance(core, dict):
+                core["one_sentence"] = result.analysis_summary
+
     def _build_analysis_context_pack_outputs(
         self,
         artifacts: PipelineAnalysisArtifacts,
@@ -3179,6 +3199,9 @@ class StockAnalysisPipeline:
                 pack,
                 report_language=report_language,
             )
+            holding_note = format_position_observation(artifacts.portfolio_context, language=report_language)
+            if holding_note:
+                summary += "\n" + holding_note + "\n"
             return summary, overview
         except Exception as exc:
             logger.warning(

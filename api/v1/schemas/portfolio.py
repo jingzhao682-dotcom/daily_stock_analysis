@@ -297,3 +297,36 @@ class PortfolioRiskResponse(BaseModel):
     drawdown: Dict[str, Any] = Field(default_factory=dict)
     stop_loss: Dict[str, Any] = Field(default_factory=dict)
     decision_signal_risk: PortfolioDecisionSignalRiskBlock = Field(default_factory=PortfolioDecisionSignalRiskBlock)
+
+
+class IBKRFlexPosition(BaseModel):
+    symbol: str
+    asset_category: str
+    currency: str
+    quantity: float
+    avg_cost: float
+    mark_price: float
+    market_value_base: float
+    cost_basis_base: float
+    fx_rate_to_base: float
+    unrealized_pnl_base: float
+    analysis_supported: bool
+    weight_of_reported_assets_pct: Optional[float] = None
+
+
+class IBKRFlexSnapshotResponse(BaseModel):
+    source: Literal["ibkr_flex"]
+    as_of: str
+    imported_at: str
+    report_fingerprint: str
+    currency: str
+    age_days: int
+    stale: bool
+    data_quality: Literal["partial"]
+    limitations: List[str]
+    read_only: Literal[True]
+    total_cash: float
+    total_market_value: float
+    reported_assets_total: float
+    gross_exposure: float
+    positions: List[IBKRFlexPosition]

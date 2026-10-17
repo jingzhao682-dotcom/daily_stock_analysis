@@ -91,6 +91,7 @@ from src.webui_frontend import prepare_webui_frontend_assets
 from src.config import get_config, Config
 from src.logging_config import setup_logging
 from src.brokers.futu.portfolio import FutuPortfolioError
+from src.brokers.ibkr.flex import IBKRFlexError
 from data_provider.base import canonical_stock_code
 from src.services.stock_list_parser import (
     AnalysisTarget,
@@ -335,9 +336,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         '--portfolio',
         type=str.lower,
-        choices=('futu',),
-        help='使用券商真实持仓作为股票列表；当前支持 futu，并覆盖 --stocks/STOCK_LIST'
+        choices=('futu', 'ibkr'),
+        help='使用券商真实持仓作为股票列表；支持 futu 或本机 IBKR Flex XML，并覆盖 --stocks/STOCK_LIST'
     )
+
+    parser.add_argument('--ibkr-flex-file', help='IBKR Activity Flex XML 本机路径（只读）')
+    parser.add_argument('--ibkr-account', help='多账户 Flex 文件中的账户选择器（不写入报告）')
 
     parser.add_argument(
         '--no-notify',
@@ -472,7 +476,12 @@ def parse_arguments() -> argparse.Namespace:
         help='运行 ETF 轮动：输出最新调仓信号与规则回测报告（不调用 LLM，配置见 ETF_ROTATION_*）'
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if (args.ibkr_flex_file or args.ibkr_account) and args.portfolio != "ibkr":
+        parser.error("--ibkr-flex-file/--ibkr-account require --portfolio ibkr")
+    if args.portfolio == "ibkr" and not args.ibkr_flex_file:
+        parser.error("--portfolio ibkr requires --ibkr-flex-file")
+    return args
 
 
 def _compute_trading_day_filter(
@@ -621,6 +630,19 @@ def _resolve_portfolio_stock_codes(args: argparse.Namespace) -> Optional[List[st
     portfolio = str(getattr(args, "portfolio", "") or "").strip().lower()
     if not portfolio:
         return None
+    if portfolio == "ibkr":
+        from src.brokers.ibkr.flex import load_report
+        snapshot = load_report(
+            getattr(args, "ibkr_flex_file", None), account=getattr(args, "ibkr_account", None),
+        )
+        args._ibkr_snapshot = snapshot
+        codes = [row["symbol"] for row in snapshot["positions"] if row["analysis_supported"]]
+        if snapshot["positions"] and not codes:
+            from src.brokers.ibkr.flex import IBKRFlexError
+            raise IBKRFlexError("The report has no supported US stock/ETF positions for analysis")
+        logger.info("IBKR Flex: report date=%s, supported positions=%d, stale=%s",
+                    snapshot["as_of"], len(codes), snapshot["stale"])
+        return codes
     if portfolio != "futu":  # argparse prevents this for CLI callers; keep API callers safe.
         raise ValueError(f"不支持的 portfolio: {portfolio}")
 
@@ -826,8 +848,9 @@ def run_full_analysis(
     )
     if portfolio_is_empty and not market_review_requested:
         logger.info(
-            "真实账户中无符合条件的 Futu 持仓，"
-            "本轮跳过个股分析和大盘复盘。"
+            "%s，"
+            "本轮跳过个股分析和大盘复盘。",
+            "IBKR 报表中无符合条件的持仓" if getattr(args, "portfolio", None) == "ibkr" else "真实账户中无符合条件的 Futu 持仓",
         )
         _run_auto_backtest(config)
         return True
@@ -877,8 +900,9 @@ def run_full_analysis(
         if should_skip:
             if portfolio_is_empty:
                 logger.info(
-                    "真实账户中无符合条件的 Futu 持仓，"
-                    "本轮无需执行个股分析或大盘复盘，跳过执行。"
+                    "%s，"
+                    "本轮无需执行个股分析或大盘复盘，跳过执行。",
+                    "IBKR 报表中无符合条件的持仓" if getattr(args, "portfolio", None) == "ibkr" else "真实账户中无符合条件的 Futu 持仓",
                 )
             else:
                 logger.info(
@@ -967,6 +991,7 @@ def run_full_analysis(
             save_context_snapshot=save_context_snapshot,
             daily_market_context_enabled=should_use_daily_market_context,
             daily_market_context_allow_generate=should_use_daily_market_context,
+            portfolio_context=getattr(args, "_ibkr_snapshot", None),
         )
         if should_use_daily_market_context:
             # Prompt-side context can reuse historical summaries, while full-merge
@@ -997,9 +1022,9 @@ def run_full_analysis(
         # 1. 运行个股分析
         if skip_futu_stock_analysis:
             if portfolio_is_empty:
-                logger.info("真实账户中无符合条件的 Futu 持仓，跳过个股分析。")
+                logger.info("%s，跳过个股分析。", "IBKR 报表中无符合条件的持仓" if getattr(args, "portfolio", None) == "ibkr" else "真实账户中无符合条件的 Futu 持仓")
             else:
-                logger.info("Futu 持仓经交易日过滤后无可分析股票，跳过个股分析。")
+                logger.info("券商持仓经交易日过滤后无可分析股票，跳过个股分析。")
             results = []
         else:
             results = pipeline.run(
@@ -1710,6 +1735,9 @@ def main() -> int:
         }
         if getattr(args, "portfolio", None):
             runtime_scheduler_args["portfolio"] = args.portfolio
+            for key in ("ibkr_flex_file", "ibkr_account"):
+                if getattr(args, key, None):
+                    runtime_scheduler_args[key] = getattr(args, key)
         os.environ[RUNTIME_SCHEDULER_ARGS_ENV] = json.dumps(runtime_scheduler_args)
         if not prepare_webui_frontend_assets():
             logger.warning("前端静态资源未就绪，继续启动 FastAPI 服务（Web 页面可能不可用）")
@@ -1899,11 +1927,11 @@ def main() -> int:
                 analysis_ok = _run_analysis_with_runtime_scheduler_lock(
                     config, args, stock_codes, analysis_targets
                 )
-            except FutuPortfolioError as exc:
+            except (FutuPortfolioError, IBKRFlexError) as exc:
                 if not start_serve:
                     raise
                 logger.exception(
-                    "Futu 持仓导入失败，Web/API 服务继续运行: %s",
+                    "券商持仓导入失败，Web/API 服务继续运行: %s",
                     exc,
                 )
             else:

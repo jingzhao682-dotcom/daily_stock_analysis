@@ -120,6 +120,7 @@ def apply_phase_decision_guardrails(
     market_phase_summary: Optional[Dict[str, Any]],
     analysis_context_pack_overview: Optional[Dict[str, Any]],
     report_language: str = "zh",
+    portfolio_context: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Apply phase/data-quality guardrails to an AnalysisResult in place."""
 
@@ -199,7 +200,8 @@ def apply_phase_decision_guardrails(
         _append_reason(phase_decision, reason)
         adjustments.append("postmarket_recap_wording_adjusted")
 
-    if core_degraded:
+    observation_only = isinstance(portfolio_context, Mapping) and portfolio_context.get("source") == "ibkr_flex"
+    if core_degraded or observation_only:
         reason = _reason_text(
             language,
             en="Core data is limited. Treat technical readings as observations; verify data before trading. "
@@ -208,6 +210,13 @@ def apply_phase_decision_guardrails(
             ko="핵심 데이터가 제한됩니다. 기술 지표는 관찰용이며 거래 전 데이터를 확인하세요. "
                "이 보고서만으로 장기 자산배분을 변경하지 마세요.",
         )
+        if observation_only:
+            reason = _reason_text(
+                language,
+                en="IBKR statement import is observation-only. Verify current holdings and define allocation rules before making portfolio changes.",
+                zh="IBKR 报表导入仅用于持仓观察；须核验当前持仓并设置配置规则后，再判断是否调整组合。",
+                ko="IBKR 명세서 가져오기는 관찰 전용입니다. 포트폴리오 변경 전 현재 보유와 배분 규칙을 확인하세요.",
+            )
         # Use the existing action taxonomy and persisted guardrail reason so
         # downstream score/action alignment cannot resurrect a buy/sell badge.
         result.operation_advice = localize_action_label("watch", language)
@@ -233,7 +242,7 @@ def apply_phase_decision_guardrails(
         if not has_non_intraday_action:
             phase_decision["immediate_action"] = reason
         _append_reason(phase_decision, reason)
-        adjustments.append("action_downgraded_core_data_degraded")
+        adjustments.append("action_downgraded_portfolio_observation" if observation_only else "action_downgraded_core_data_degraded")
 
     if (
         getattr(result, "news_result_count_known", False)
@@ -473,6 +482,13 @@ def _adjustment_limitation_text(adjustment: str, *, language: str) -> str:
             en="confidence capped due to degraded core data",
             zh="核心数据受限已降低置信度",
             ko="핵심 데이터 제한으로 신뢰도를 낮춤",
+        )
+    if adjustment == "action_downgraded_portfolio_observation":
+        return _reason_text(
+            language,
+            en="IBKR statement is for holding observations only",
+            zh="IBKR 报表仅用于持仓观察",
+            ko="IBKR 명세서는 보유 관찰 전용",
         )
     return adjustment
 

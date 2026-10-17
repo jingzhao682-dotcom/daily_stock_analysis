@@ -38,6 +38,8 @@ SCHEDULE_ARGS_OVERRIDE_KEYS = {
     "no_context_snapshot",
     "workers",
     "portfolio",
+    "ibkr_flex_file",
+    "ibkr_account",
 }
 
 

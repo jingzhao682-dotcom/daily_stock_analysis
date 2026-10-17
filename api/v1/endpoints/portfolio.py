@@ -14,6 +14,7 @@ from api.v1.errors import api_error
 from api.v1.schemas.analysis import DuplicateTaskErrorResponse, TaskAccepted
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.portfolio import (
+    IBKRFlexSnapshotResponse,
     PortfolioAccountCreateRequest,
     PortfolioAccountItem,
     PortfolioAccountListResponse,
@@ -35,6 +36,7 @@ from api.v1.schemas.portfolio import (
     PortfolioTradeListResponse,
     PortfolioTradeCreateRequest,
 )
+from src.brokers.ibkr.flex import parse_report, read_report, position_context
 from src.services.task_queue import get_task_queue
 from src.services.portfolio_import_service import PortfolioImportService
 from src.services.portfolio_risk_service import PortfolioRiskService
@@ -459,6 +461,12 @@ def analyze_position(symbol: str, request: PortfolioPositionAnalysisRequest) -> 
     except Exception as exc:
         raise _internal_error("Resolve portfolio position failed", exc)
 
+    return _submit_position_analysis(context, request=request, notify=True)
+
+
+def _submit_position_analysis(
+    context: dict, *, request: PortfolioPositionAnalysisRequest, notify: bool,
+) -> TaskAccepted | JSONResponse:
     queue = get_task_queue()
     accepted, duplicates = queue.submit_tasks_batch(
         [context["symbol"]],
@@ -470,7 +478,7 @@ def analyze_position(symbol: str, request: PortfolioPositionAnalysisRequest) -> 
         report_type="detailed",
         analysis_phase=request.analysis_phase,
         force_refresh=bool(request.force),
-        notify=True,
+        notify=notify,
     )
     if duplicates:
         dup = duplicates[0]
@@ -553,6 +561,41 @@ def _resolve_position_analysis_context(
         "price_available": bool(position.get("price_available", True)),
         "cost_method": snapshot.get("cost_method") or "fifo",
     }
+
+
+@router.post(
+    "/imports/ibkr/flex/parse",
+    response_model=IBKRFlexSnapshotResponse,
+    responses={400: {"model": ErrorResponse}},
+    summary="Preview a local IBKR Activity Flex snapshot without writing ledger events",
+)
+def parse_ibkr_flex(
+    file: UploadFile = File(...), account: Optional[str] = Form(None),
+) -> IBKRFlexSnapshotResponse:
+    try:
+        return IBKRFlexSnapshotResponse(**parse_report(read_report(file.file), account=account))
+    except ValueError as exc:
+        raise _bad_request(exc)
+
+
+@router.post(
+    "/imports/ibkr/flex/positions/{symbol}/analysis",
+    status_code=202,
+    response_model=TaskAccepted,
+    responses={400: {"model": ErrorResponse}, 409: {"model": DuplicateTaskErrorResponse}},
+    summary="Analyze one imported holding as an observation, with notifications disabled",
+)
+def analyze_ibkr_flex_position(
+    symbol: str, file: UploadFile = File(...), account: Optional[str] = Form(None),
+) -> TaskAccepted | JSONResponse:
+    try:
+        snapshot = parse_report(read_report(file.file), account=account)
+        context = position_context(snapshot, symbol.upper())
+    except ValueError as exc:
+        raise _bad_request(exc)
+    return _submit_position_analysis(
+        context, request=PortfolioPositionAnalysisRequest(), notify=False,
+    )
 
 
 @router.post(

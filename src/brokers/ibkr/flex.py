@@ -6,7 +6,9 @@ No credentials, account identifiers or free-form report text enter the result.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -26,7 +28,7 @@ class IBKRFlexError(ValueError):
 def read_report(stream: BinaryIO) -> bytes:
     content = stream.read(MAX_REPORT_BYTES + 1)
     if len(content) > MAX_REPORT_BYTES:
-        raise IBKRFlexError("Flex XML exceeds the 5 MiB limit")
+        raise IBKRFlexError("Flex report exceeds the 5 MiB limit")
     return content
 
 
@@ -37,7 +39,7 @@ def load_report(path: str, *, account: str | None = None) -> dict[str, Any]:
         with Path(path).open("rb") as stream:
             return parse_report(read_report(stream), account=account)
     except OSError:
-        raise IBKRFlexError("Cannot read the selected local Flex XML file") from None
+        raise IBKRFlexError("Cannot read the selected local Flex report file") from None
 
 
 def _number(row: ET.Element, key: str) -> Decimal:
@@ -64,13 +66,15 @@ def _currency(value: str) -> str:
 
 
 def parse_report(content: bytes, *, account: str | None = None, today: date | None = None) -> dict[str, Any]:
-    """Return one account snapshot. Multiple accounts/dates must never be summed."""
+    """Return one account snapshot from Activity Flex XML or multi-section CSV."""
     if not content or len(content) > MAX_REPORT_BYTES:
-        raise IBKRFlexError("Empty or oversized Flex XML")
+        raise IBKRFlexError("Empty or oversized Flex report")
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
-        raise IBKRFlexError("Flex XML must be UTF-8") from None
+        raise IBKRFlexError("Flex report must be UTF-8") from None
+    if text.lstrip().startswith('"ClientAccountID"') or text.lstrip().startswith("ClientAccountID"):
+        return _parse_csv_report(content, text, account=account, today=today)
     if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper() or "\x00" in text:
         raise IBKRFlexError("XML entities and document types are not supported")
     try:
@@ -186,6 +190,114 @@ def parse_report(content: bytes, *, account: str | None = None, today: date | No
         "total_cash": cash, "total_market_value": market_value,
         "reported_assets_total": assets, "gross_exposure": gross,
         "positions": positions,
+    }
+
+
+def _csv_number(row: dict[str, str], key: str) -> Decimal:
+    try:
+        value = Decimal(row[key])
+    except (KeyError, InvalidOperation, ValueError):
+        raise IBKRFlexError(f"Missing or invalid Flex CSV field: {key}") from None
+    if not value.is_finite() or abs(value) > Decimal("1e15"):
+        raise IBKRFlexError(f"Non-finite or out-of-range Flex CSV field: {key}")
+    return value
+
+
+def _parse_csv_report(content: bytes, text: str, *, account: str | None, today: date | None) -> dict[str, Any]:
+    """Parse IBKR's repeated-header CSV without retaining account identifiers."""
+    raw_rows = list(csv.reader(io.StringIO(text)))
+    if not raw_rows or any(len(row) > 128 for row in raw_rows):
+        raise IBKRFlexError("Invalid Flex CSV")
+    sections: dict[tuple[str, ...], list[dict[str, str]]] = {}
+    header: tuple[str, ...] | None = None
+    for values in raw_rows:
+        if not values or not any(value.strip() for value in values):
+            continue
+        values = [value.strip() for value in values]
+        if values[0] == "ClientAccountID":
+            header = tuple(values)
+            if len(header) != len(set(header)):
+                raise IBKRFlexError("Duplicate Flex CSV columns")
+            sections.setdefault(header, [])
+            continue
+        if header is None or len(values) != len(header):
+            raise IBKRFlexError("Flex CSV row does not match its section header")
+        sections[header].append(dict(zip(header, values)))
+
+    position_header = next((h for h in sections if {"Symbol", "Quantity", "CostBasisMoney", "PositionValue", "FifoPnlUnrealized", "CurrencyPrimary", "ReportDate"} <= set(h)), None)
+    cash_header = next((h for h in sections if {"EndingCash", "Dividends", "Commissions", "Deposit/Withdrawals", "FromDate", "ToDate"} <= set(h)), None)
+    if position_header is None or cash_header is None or len(sections[cash_header]) != 1:
+        raise IBKRFlexError("Flex CSV must include one positions section and one cash/activity summary")
+    all_rows = [row for rows in sections.values() for row in rows]
+    accounts = {row.get("ClientAccountID", "") for row in all_rows if row.get("ClientAccountID")}
+    if account:
+        if account.strip() not in accounts:
+            raise IBKRFlexError("Selected account is not present in the Flex CSV")
+        selected = account.strip()
+    elif len(accounts) == 1:
+        selected = next(iter(accounts))
+    else:
+        raise IBKRFlexError("Select exactly one account; use --ibkr-account for a multi-account CSV")
+    if any(row.get("ClientAccountID") not in {"", selected} for row in all_rows):
+        raise IBKRFlexError("Flex CSV contains rows from multiple accounts")
+
+    cash_row = sections[cash_header][0]
+    report_date = _date(cash_row.get("ToDate", ""))
+    if _date(cash_row.get("FromDate", "")) > report_date:
+        raise IBKRFlexError("Flex CSV activity period is invalid")
+    reference_date = today or datetime.now(timezone.utc).date()
+    if report_date > reference_date:
+        raise IBKRFlexError("Flex report date is in the future")
+    position_rows = sections[position_header]
+    currencies = {_currency(row.get("CurrencyPrimary", "")) for row in position_rows}
+    currency = next(iter(currencies), "USD")
+    if len(currencies) > 1:
+        raise IBKRFlexError("Flex CSV positions use multiple currencies without FX rates")
+    positions = []
+    symbols: set[str] = set()
+    for row in position_rows:
+        if _date(row.get("ReportDate", "")) != report_date:
+            raise IBKRFlexError("Position dates do not match the activity summary")
+        symbol = row.get("Symbol", "")
+        if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,15}", symbol) or symbol in symbols:
+            raise IBKRFlexError("Missing, invalid or duplicate Flex CSV position symbol")
+        symbols.add(symbol)
+        quantity = _csv_number(row, "Quantity")
+        cost = _csv_number(row, "CostBasisMoney")
+        value = _csv_number(row, "PositionValue")
+        pnl = _csv_number(row, "FifoPnlUnrealized")
+        if quantity == 0 or quantity * cost < 0 or abs((value - cost) - pnl) > Decimal("0.02"):
+            raise IBKRFlexError("Flex CSV position quantity, cost, value and P&L disagree")
+        positions.append({
+            "symbol": symbol, "asset_category": "STK", "currency": currency,
+            "quantity": float(quantity), "avg_cost": float(cost / quantity),
+            "mark_price": float(value / quantity), "market_value_base": float(value),
+            "cost_basis_base": float(cost), "fx_rate_to_base": 1.0,
+            "unrealized_pnl_base": float(pnl), "analysis_supported": currency == "USD",
+        })
+    market_value = sum(row["market_value_base"] for row in positions)
+    cash = float(_csv_number(cash_row, "EndingCash"))
+    assets = market_value + cash
+    for row in positions:
+        row["weight_of_reported_assets_pct"] = row["market_value_base"] / assets * 100 if assets > 0 else None
+    age_days = (reference_date - report_date).days
+    limitations = ["statement_snapshot_not_live", "cash_plus_positions_not_broker_nav", "cost_fx_at_statement_rate_not_total_return",
+                   "csv_lacks_contract_exchange_asset_type_and_fx", "no_etf_lookthrough_or_historical_drawdown", "no_target_allocation_configured"]
+    if age_days > MAX_REPORT_AGE_DAYS:
+        limitations.append("stale_statement")
+    trade_header = next((h for h in sections if {"TradeDate", "TradePrice", "IBCommission", "Buy/Sell"} <= set(h)), None)
+    transaction_header = next((h for h in sections if {"Date/Time", "Amount", "Type"} <= set(h)), None)
+    return {
+        "source": "ibkr_flex", "format": "csv", "as_of": report_date.isoformat(), "currency": currency,
+        "imported_at": datetime.now(timezone.utc).isoformat(), "report_fingerprint": hashlib.sha256(content).hexdigest(),
+        "age_days": age_days, "stale": age_days > MAX_REPORT_AGE_DAYS, "data_quality": "partial",
+        "limitations": limitations, "read_only": True, "total_cash": cash, "total_market_value": market_value,
+        "reported_assets_total": assets, "gross_exposure": sum(abs(row["market_value_base"]) for row in positions),
+        "positions": positions,
+        "activity": {"from_date": _date(cash_row["FromDate"]).isoformat(), "to_date": report_date.isoformat(),
+                     "dividends": float(_csv_number(cash_row, "Dividends")), "commissions": float(_csv_number(cash_row, "Commissions")),
+                     "deposits_withdrawals": float(_csv_number(cash_row, "Deposit/Withdrawals")),
+                     "trade_rows": len(sections.get(trade_header, [])), "cash_transaction_rows": len(sections.get(transaction_header, []))},
     }
 
 

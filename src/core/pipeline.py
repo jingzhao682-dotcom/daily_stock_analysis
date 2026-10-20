@@ -1113,7 +1113,7 @@ class StockAnalysisPipeline:
             # For US completed-session reports, derive both visible
             # "volume ratio" and the AI trend wording from the SAME 5-prior-day
             # share-volume computation. A missing ratio is not zero liquidity.
-            if get_market_for_stock(code) == 'us' and isinstance(enhanced.get('realtime'), dict):
+            if get_market_for_stock(normalize_stock_code(context.get('code', ''))) == 'us' and isinstance(enhanced.get('realtime'), dict):
                 ratio_5d = getattr(trend_result, 'volume_ratio_5d', 0) or 0
                 if ratio_5d > 0:
                     enhanced['realtime']['volume_ratio'] = round(float(ratio_5d), 3)

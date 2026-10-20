@@ -2063,10 +2063,6 @@ Market conditions can change quickly. The data above is for reference only and d
             else ""
         )
         indices_block = self._build_indices_block(overview)
-        gold_section = ""
-        if self.region == "us":
-            from src.services.gold_benchmarks import build_gold_benchmark_section
-            gold_section = build_gold_benchmark_section()
         sector_block = self._build_sector_block(overview) if self.profile.has_sector_rankings else ""
         summary_focus = (
             "指数承接、成交额变化和板块持续性"
@@ -2107,7 +2103,6 @@ Market conditions can change quickly. The data above is for reference only and d
 
 ### 二、指数结构
 {indices_block or indices_text or "暂无指数数据。"}
-{gold_section}
 {sector_section}
 {funds_section}
 
@@ -2136,6 +2131,9 @@ Market conditions can change quickly. The data above is for reference only and d
 
         # 3. 生成复盘报告
         report = self.generate_market_review(overview, news)
+        if self.region == "us":
+            from src.services.gold_benchmarks import build_gold_benchmark_section
+            report = report.rstrip() + "\n\n" + build_gold_benchmark_section()
         snapshot = self.build_market_light_snapshot(overview) if self._supports_market_light() else None
         structured_payload = self.build_market_review_payload(
             overview,

@@ -3587,6 +3587,7 @@ class StockAnalysisPipeline:
             )
         
         results: List[AnalysisResult] = []
+        completed_codes = set()
         
         # 使用线程池并发处理
         # 注意：max_workers 设置较低（默认3）以避免触发反爬
@@ -3621,6 +3622,7 @@ class StockAnalysisPipeline:
                 try:
                     result = future.result()
                     if result and result.success:
+                        completed_codes.add(code)
                         results.append(result)
                         if single_stock_notify and send_notification and not dry_run:
                             self._send_single_stock_notification(
@@ -3646,6 +3648,11 @@ class StockAnalysisPipeline:
                 except Exception as e:
                     logger.error(f"[{code}] 任务执行失败: {e}")
         
+        self._last_batch_coverage = {
+            "requested": list(stock_codes),
+            "failed": [code for code in stock_codes if code not in completed_codes],
+        }
+
         # 统计
         elapsed_time = time.time() - start_time
         
@@ -3677,7 +3684,7 @@ class StockAnalysisPipeline:
         logger.info(f"成功: {success_count}, 失败: {fail_count}, 耗时: {elapsed_time:.2f} 秒")
         
         # 保存报告到本地文件（无论是否推送通知都保存）
-        if results and not dry_run:
+        if not dry_run and (results or self._last_batch_coverage["failed"]):
             self._save_local_report(results, report_type)
 
         # 发送通知（单股推送模式下跳过汇总推送，避免重复）
@@ -4448,4 +4455,12 @@ class StockAnalysisPipeline:
         else:
             report = self.notifier.generate_dashboard_report(results)
         from src.services.report_evidence_guard import redact_unverified_flow_lines
-        return redact_unverified_flow_lines(report, results)
+        report = redact_unverified_flow_lines(report, results)
+        coverage = getattr(self, "_last_batch_coverage", None)
+        if isinstance(coverage, dict) and coverage.get("failed"):
+            requested = coverage["requested"]
+            failed = coverage["failed"]
+            report = (f"> 分析覆盖不完整：请求 {len(requested)} 只，成功 {len(requested) - len(failed)} 只，"
+                      f"失败 {len(failed)} 只。未完成：{', '.join(failed)}。"
+                      "失败不代表剔除或卖出；请检查模型配额、可用性及数据源后重试。\n\n" + report)
+        return report

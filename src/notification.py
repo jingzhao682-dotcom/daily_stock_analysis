@@ -1459,9 +1459,10 @@ class NotificationService(
                         ])
                     # 量能分析
                     if vol_data:
+                        turnover = (getattr(result, 'market_snapshot', None) or {}).get('turnover_rate', 'N/A')
                         report_lines.extend([
                             f"**{labels['volume_label']}**: {labels['volume_ratio_label']} {vol_data.get('volume_ratio', 'N/A')} ({vol_data.get('volume_status', '')}) | "
-                            f"{labels['turnover_rate_label']} {vol_data.get('turnover_rate', 'N/A')}%",
+                            f"{labels['turnover_rate_label']} {turnover}",
                             f"💡 *{vol_data.get('volume_meaning', '')}*",
                             "",
                         ])
@@ -2250,6 +2251,10 @@ class NotificationService(
                 "institution_status": None,
             }
 
+        from src.services.filing_evidence import quarantine_unverified_financials
+        from src.market_context import detect_market
+        ctx = quarantine_unverified_financials(ctx, market=detect_market(getattr(result, "code", None)))
+
         earnings_block = ctx.get("earnings") if isinstance(ctx.get("earnings"), dict) else {}
         earnings_data = earnings_block.get("data") if isinstance(earnings_block.get("data"), dict) else {}
         financial_report = earnings_data.get("financial_report") if isinstance(earnings_data.get("financial_report"), dict) else {}
@@ -2317,6 +2322,9 @@ class NotificationService(
     ) -> None:
         report = blocks.get("financial_report") or {}
         growth = blocks.get("growth") or {}
+        if report.get("verification_status") == "unverified_source":
+            lines.extend(["> 财务指标来源未核验：缺少 SEC 原始申报链接，ROE、增长率、利润率及报表金额均不展示。", ""])
+            return
         currency = report.get("currency") if isinstance(report.get("currency"), str) else None
         cells = {
             "report_date": self._format_text(report.get("report_date")),

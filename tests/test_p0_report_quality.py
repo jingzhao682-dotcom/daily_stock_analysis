@@ -110,7 +110,7 @@ def test_mixed_quote_dates_are_not_presented_as_one_known_session():
     from unittest.mock import patch
     with patch("src.market_analyzer.datetime") as now:
         now.now.return_value.strftime.return_value = "2026-10-17"
-        assert ma.get_market_overview().date == "2026-10-17"
+        assert ma.get_market_overview().date == "N/A"
     assert ma.build_market_light_snapshot(data)["data_quality"] == "unavailable"
 
 

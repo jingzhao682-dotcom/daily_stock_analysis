@@ -42,12 +42,16 @@ def quarantine_unverified_financials(context, *, market="us"):
 
     earnings = context.get("earnings")
     if not isinstance(earnings, dict):
-        return context
+        earnings = {}
     data = earnings.get("data")
     if not isinstance(data, dict):
-        return context
+        data = {}
     statement = data.get("financial_report")
-    if not isinstance(statement, dict) or not statement:
+    if not isinstance(statement, dict):
+        statement = {}
+
+    growth_block = context.get("growth")
+    if not statement and not (isinstance(growth_block, dict) and growth_block.get("data")):
         return context
 
     result = dict(context)
@@ -57,11 +61,20 @@ def quarantine_unverified_financials(context, *, market="us"):
     if not evidence["verified"]:
         gated_data["financial_report"] = {
             "report_date": statement.get("report_date"),
+            "currency": statement.get("currency"),
             "verification_status": "unverified_source",
             "verification_note": "financial line items suppressed: no SEC source link",
         }
         gated["data"] = gated_data
         gated["status"] = "partial"
+        # Growth and margin percentages are derived from the same issuer
+        # financial statements: hide them too when the source cannot be checked.
+        growth = context.get("growth")
+        if isinstance(growth, dict) and isinstance(growth.get("data"), dict):
+            result["growth"] = {
+                **growth, "data": {}, "status": "partial",
+                "errors": list(growth.get("errors") or []) + ["unverified_filing_source"],
+            }
     else:
         gated_data["financial_report"] = {
             **statement,

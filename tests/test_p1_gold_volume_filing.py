@@ -17,7 +17,9 @@ def test_filing_requires_official_url_and_date():
 def test_gold_benchmarks_fail_closed_with_explicit_units():
     with patch("yfinance.Ticker", side_effect=Exception("provider blocked")), patch(
         "akshare.futures_main_sina", side_effect=Exception("provider blocked")
-    ), patch("pandas.read_csv", side_effect=Exception("provider blocked")):
+    ), patch("pandas.read_csv", side_effect=Exception("provider blocked")), patch(
+        "urllib.request.urlopen", side_effect=Exception("provider blocked")
+    ):
         report = build_gold_benchmark_section()
     assert "国际黄金现货" in report
     assert "上海期货交易所沪金主力" in report
@@ -99,3 +101,74 @@ def test_unverified_us_income_statement_is_quarantined_before_prompt():
     assert guarded["earnings"]["data"]["dividend"]["ttm_event_count"] == 0
     assert source["earnings"]["data"]["financial_report"]["revenue"] == 7800000
     assert quarantine_unverified_financials(source, market="hk") is source
+
+def test_gold_spot_live_provider_has_units_timestamp_and_no_etf_proxy():
+    import json
+    import io
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    dt = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    mock = MagicMock()
+    mock.__enter__.return_value = io.BytesIO(json.dumps({
+        "symbol": "XAU", "currency": "USD", "price": 4301.25,
+        "updatedAt": dt
+    }).encode("utf-8"))
+    with patch("urllib.request.urlopen", return_value=mock), patch(
+        "akshare.futures_main_sina", side_effect=Exception("unavailable")
+    ):
+        text = build_gold_benchmark_section()
+    assert "4301.25" in text
+    assert "Gold-API" in text
+    assert "美元/金衡盎司" in text
+    assert "（参考报价）" in text
+    assert "ETF" in text
+
+
+def test_market_review_excludes_vix_from_other_session():
+    from types import SimpleNamespace
+    from src.market_analyzer import MarketAnalyzer, MarketIndex
+
+    analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
+    analyzer.region = "us"
+    analyzer.profile = SimpleNamespace(has_market_stats=False, has_sector_rankings=False)
+    fake = [
+        MarketIndex(code="SPX", name="标普500", trade_date="2026-10-19"),
+        MarketIndex(code="NDX", name="纳斯达克100", trade_date="2026-10-19"),
+        MarketIndex(code="DJI", name="道琼斯", trade_date="2026-10-19"),
+        MarketIndex(code="VIX", name="VIX", trade_date="2026-10-20"),
+    ]
+    with patch.object(analyzer, "_get_main_indices", return_value=fake):
+        result = analyzer.get_market_overview()
+    assert result.date == "2026-10-19"
+    assert [x.code for x in result.indices] == ["SPX", "NDX", "DJI"]
+    assert "VIX" in analyzer._us_out_of_session_notes[0]
+    assert "2026-10-20" in analyzer._us_out_of_session_notes[0]
+
+def test_unsourced_issuer_growth_percentages_are_removed():
+    from src.services.filing_evidence import quarantine_unverified_financials
+    context = {
+        "earnings": {"status": "ok", "data": {"financial_report": {
+            "report_date": "2026-06-30", "revenue": 10000
+        }}},
+        "growth": {"status": "ok", "data": {
+            "revenue_yoy": 91.94, "net_profit_yoy": 46.33,
+            "gross_margin": 51.88
+        }},
+    }
+    sanitized = quarantine_unverified_financials(context, market="us")
+    assert sanitized["growth"]["data"] == {}
+    assert sanitized["growth"]["status"] == "partial"
+    assert context["growth"]["data"]["gross_margin"] == 51.88
+
+
+def test_unsupported_capital_absorption_is_redacted():
+    from types import SimpleNamespace
+    from src.services.report_evidence_guard import redact_unverified_flow_lines
+    evidence_absent = SimpleNamespace(fundamental_context={
+        "capital_flow": {"status": "not_supported", "data": {}}
+    })
+    source = "缩量上涨，缺乏资金承接。\n"
+    sanitized = redact_unverified_flow_lines(source, [evidence_absent])
+    assert "缺乏资金承接" not in sanitized
+    assert "已隐藏" in sanitized

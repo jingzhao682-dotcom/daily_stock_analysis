@@ -1,11 +1,11 @@
 name: 每日股票分析
 
 on:
-  # P2 仅此次合并回放一次实际日报，验收完删除此 push 触发器。
+  # 仅本次修复合并后回放；push 验收只保存产物，不发送通知。
   push:
     branches: [main]
     paths:
-      - 'tests/test_official_news_market_qa.py'
+      - 'tests/test_report_followup_20261020.py'
   # 美股观察：北京时间周二至周六 08:15（UTC 00:15），复盘美股上一交易日
   schedule:
     - cron: '15 0 * * 2-6'     # 周二至周六，北京时间 08:15（GitHub Actions 可能延迟）
@@ -595,6 +595,11 @@ jobs:
             echo "⚡ 已启用强制运行模式（跳过交易日检查）"
           fi
 
+          # 合并后的验收回放只保存产物；定时和手动通知配置保持不变。
+          if [ "${{ github.event_name }}" = "push" ]; then
+            FORCE_RUN_ARG="$FORCE_RUN_ARG --no-notify"
+          fi
+
           # 执行分析
           if [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
@@ -632,3 +637,4 @@ jobs:
             echo "📜 最近日志（最后 30 行）:"
             tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
           fi
+

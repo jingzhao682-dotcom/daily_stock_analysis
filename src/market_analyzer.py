@@ -566,11 +566,36 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         overview.indices = self._get_main_indices()
 
         if self.region == "us" and overview.indices:
-            # Yahoo bars carry the exchange session date. Do not guess a
-            # previous weekday: holidays and mixed sessions need provenance.
-            dates = {idx.trade_date for idx in overview.indices}
-            if len(dates) == 1 and None not in dates:
-                overview.date = next(iter(dates))
+            # A premarket VIX snapshot may have the current US calendar
+            # date while SPX/NDX/DJI still belong to the prior close.
+            # Anchor the recap to the majority of the three core indices.
+            # Out-of-session series must not contaminate the day's index
+            # returns, average score or the report date.
+            from collections import Counter
+            core_dates = [
+                idx.trade_date for idx in overview.indices
+                if str(idx.code).upper().lstrip("^") in ("SPX", "NDX", "DJI")
+                and idx.trade_date
+            ]
+            self._us_out_of_session_notes = []
+            if core_dates:
+                session_date, count = Counter(core_dates).most_common(1)[0]
+                if count >= 2:
+                    overview.date = session_date
+                    included = []
+                    for idx in overview.indices:
+                        if idx.trade_date == session_date:
+                            included.append(idx)
+                        else:
+                            self._us_out_of_session_notes.append(
+                                f"{idx.name}: 交易日 {idx.trade_date or '未知'} "
+                                f"与基准 {session_date} 不一致，已从当日指数统计排除"
+                            )
+                    overview.indices = included
+                else:
+                    overview.date = "N/A"
+            else:
+                overview.date = "N/A"
 
         # 2. 获取涨跌统计（A 股有，美股无等效数据）
         if self.profile.has_market_stats:
@@ -1426,6 +1451,10 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                     lines.append(
                         f"| {label} | N/A | N/A | N/A | N/A | N/A | N/A | N/A |"
                     )
+        notes = getattr(self, "_us_out_of_session_notes", []) if self.region == "us" else []
+        if notes:
+            lines.append("")
+            lines.append("数据日期说明：" + "；".join(notes))
         return "\n".join(lines)
 
     def _build_sector_block(self, overview: MarketOverview) -> str:
@@ -1478,7 +1507,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             ]
         else:
             lines = [
-                "#### 近三日市场线索",
+                "#### 市场线索（发布日期见各条来源）",
             ]
 
         for idx, item in enumerate(news[:5], 1):

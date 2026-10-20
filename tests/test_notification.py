@@ -1640,6 +1640,7 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
             },
         )
 
+        result.market_snapshot = {"turnover_rate": "0.82%"}  # Provider-formatted value.
         markdown = service.generate_dashboard_report([result], report_date="2026-07-31")
         html = build_share_image_html(markdown, generated_on=date(2026, 7, 31))
 
@@ -1862,6 +1863,8 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
                 "data": {
                     "financial_report": {
                         "report_date": "2026-03-31",
+                        # Synthetic offline filing reference; no network/content verification.
+                        "source_url": "https://www.sec.gov/Archives/edgar/data/320193/fixture.htm",
                         "revenue": 1.11e11,
                         "net_profit_parent": 2.95e10,
                         "operating_cash_flow": 2.87e10,

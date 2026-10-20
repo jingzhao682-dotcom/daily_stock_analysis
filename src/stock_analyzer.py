@@ -226,6 +226,12 @@ class StockTrendAnalyzer:
             subset=['date'], keep='last'
         ).reset_index(drop=True)
         
+        # Duplicate provider sessions do not count toward 20 *distinct*
+        # trading days. Do not pass insufficient bars into rolling windows.
+        if len(df) < 20:
+            result.risk_factors.append("去重后有效交易日不足20天，均线不可用")
+            return result
+
         # 计算均线
         df = self._calculate_mas(df)
 

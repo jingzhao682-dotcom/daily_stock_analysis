@@ -4524,6 +4524,17 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
             ttm_cash = dividend_metrics.get("ttm_cash_dividend_per_share", "N/A")
             ttm_count = dividend_metrics.get("ttm_event_count", "N/A")
             report_date = financial_report.get("report_date", "N/A")
+            # P1 evidence gate: issuer filings must have verifiable SEC or
+            # investor-relations provenance. Without an actual URL, do not pass
+            # unverified revenue/profit into LLM analysis as factual evidence.
+            from src.services.filing_evidence import audit_filing_reference
+            evidence = audit_filing_reference(financial_report)
+            if not evidence["verified"]:
+                financial_report = {"report_date": report_date}
+            financial_evidence_note = (
+                evidence["url"] if evidence["verified"]
+                else "未经核验：缺少可信原始财报URL；财务数值已屏蔽"
+            )
             if english:
                 prompt += f"""
 ### Financials and Dividends (value-investing view)
@@ -4533,7 +4544,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | Revenue | {financial_report.get('revenue', 'N/A')} | |
 | Net Profit Attributable to Parent | {financial_report.get('net_profit_parent', 'N/A')} | |
 | Operating Cash Flow | {financial_report.get('operating_cash_flow', 'N/A')} | |
-| ROE | {financial_report.get('roe', 'N/A')} | |
+| ROE | {financial_report.get('roe', 'N/A')} | |\n| Source evidence | {financial_evidence_note} | |
 | TTM Cash Dividend per Share | {ttm_cash} | Cash dividends only, pre-tax |
 | TTM Dividend Yield | {ttm_yield} | Formula: TTM cash dividend per share / current price × 100% |
 | TTM Dividend Events | {ttm_count} | |
@@ -4549,7 +4560,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | 营业收入 | {financial_report.get('revenue', 'N/A')} | |
 | 归母净利润 | {financial_report.get('net_profit_parent', 'N/A')} | |
 | 经营现金流 | {financial_report.get('operating_cash_flow', 'N/A')} | |
-| ROE | {financial_report.get('roe', 'N/A')} | |
+| ROE | {financial_report.get('roe', 'N/A')} | |\n| Source evidence | {financial_evidence_note} | |
 | 近12个月每股现金分红 | {ttm_cash} | 仅现金分红、税前口径 |
 | TTM 股息率 | {ttm_yield} | 公式：近12个月每股现金分红 / 当前价格 × 100% |
 | TTM 分红事件数 | {ttm_count} | |

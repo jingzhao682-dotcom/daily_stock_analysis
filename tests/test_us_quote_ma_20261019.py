@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """P0 regression: 2026-10-19 US closing quotes must not become 10-20 candles.
 
-All tests use offline, deliberately explicit OHLCV fixtures. The numeric
-fixture is illustrative, not a claim of an independently verified live quote.
+All tests use offline, deliberately explicit OHLCV fixtures. The five latest DRAM closes are historical prices for Oct 13, 14, 15, 16, 19.
+Source: https://stockanalysis.com/etf/dram/history/
 """
 from datetime import date, datetime
 from types import SimpleNamespace
@@ -87,7 +87,7 @@ def test_us_historical_download_disables_adjustment():
 
 def _bars():
     dates = pd.bdate_range(end="2026-10-19", periods=25)
-    closes = [80.0 + n for n in range(20)] + [52.84, 50.47, 49.0, 46.45, 48.33]
+    closes = [80.0 + n for n in range(20)] + [52.84, 50.14, 49.33, 46.45, 48.33]
     return pd.DataFrame(
         {"code": ["DRAM"] * 25, "date": [x.date() for x in dates],
          "open": closes, "high": closes, "low": closes,
@@ -143,6 +143,6 @@ def test_analyzer_deduplicates_same_session_before_moving_averages():
 
 def test_moving_average_fixture_matches_independent_five_close_mean():
     bars = _bars()
-    expected = sum([52.84, 50.47, 49.0, 46.45, 48.33]) / 5
+    expected = sum([52.84, 50.14, 49.33, 46.45, 48.33]) / 5
     assert expected == pytest.approx(49.418)
     assert StockTrendAnalyzer().analyze(bars, "DRAM").ma5 == pytest.approx(expected)

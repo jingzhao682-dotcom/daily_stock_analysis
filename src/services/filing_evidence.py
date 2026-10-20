@@ -62,6 +62,14 @@ def quarantine_unverified_financials(context, *, market="us"):
         }
         gated["data"] = gated_data
         gated["status"] = "partial"
+        # Growth and margin percentages are derived from the same issuer
+        # financial statements: hide them too when the source cannot be checked.
+        growth = context.get("growth")
+        if isinstance(growth, dict) and isinstance(growth.get("data"), dict):
+            result["growth"] = {
+                **growth, "data": {}, "status": "partial",
+                "errors": list(growth.get("errors") or []) + ["unverified_filing_source"],
+            }
     else:
         gated_data["financial_report"] = {
             **statement,

@@ -42,12 +42,16 @@ def quarantine_unverified_financials(context, *, market="us"):
 
     earnings = context.get("earnings")
     if not isinstance(earnings, dict):
-        return context
+        earnings = {}
     data = earnings.get("data")
     if not isinstance(data, dict):
-        return context
+        data = {}
     statement = data.get("financial_report")
-    if not isinstance(statement, dict) or not statement:
+    if not isinstance(statement, dict):
+        statement = {}
+
+    growth_block = context.get("growth")
+    if not statement and not (isinstance(growth_block, dict) and growth_block.get("data")):
         return context
 
     result = dict(context)

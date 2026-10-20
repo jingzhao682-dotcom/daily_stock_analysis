@@ -44,7 +44,10 @@ def build_gold_benchmark_section() -> str:
         asset = str(payload.get("symbol") or "").upper()
         stamp = str(payload.get("updatedAt") or "")
         timestamp = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-        age = datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise ValueError("XAU timestamp requires an explicit timezone")
+        timestamp = timestamp.astimezone(timezone.utc)
+        age = datetime.now(timezone.utc) - timestamp
         if price is None or unit != "USD" or asset != "XAU" or not (
             -timedelta(minutes=10) <= age <= timedelta(hours=12)
         ):

@@ -30,3 +30,14 @@
 VIX remains visible but is excluded from equity-return averages and scoring. Existing score weights are retained; unavailable dimensions are explicitly marked and partial signals cannot authorize a risk-on allocation. Limited US reviews use deterministic observations, not generated cash targets.
 
 Live prices use their own prior close, never adjusted historical closes. Displayed price-pair returns retain the provider's original percentage separately; conflicts are disclosed and downgrade decisions. Missing quote times remain unknown. Core degraded inputs lead to watch/hold across decision surfaces, without execution levels or unsupported news weights. No trading, scheduling, credential or email delivery behavior is added.
+
+## 2026-10-20 报告完整性修复
+
+- 美股复盘以至少两项核心股票指数的交易日为基准；不足时日期为 N/A。异日 VIX 从当日指数统计排除并披露，不能用报告生成日代替行情日。
+- 新增 Gold-API XAU 参考现货报价，校验 USD、XAU、正数价格及带时区的更新时间（12 小时内）；失败回退 Yahoo/Stooq，均失败明确缺失。AU0 为新浪/AKShare 的沪金连续期货收盘价，交易日期单独列出，非上海黄金交易所现货。
+- 请求名单与成功结果分开：汇总报告披露请求、成功、失败数量及失败标的。Actions 成功仅代表程序完成，不能代表所有标的或行情源成功。失败不等于剔除/卖出。
+- 换手率使用行情快照，缺失为 N/A，不采用模型默认 0；内置与 Jinja 报告一致。
+- 无核验资金流时，量比不能支持“主力介入/抄底盘/主动性买盘”等结论。无 SEC 原始财报链接时，报表金额、ROE、营收/利润增长率及利润率一并隐藏；有链接仅代表来源引用存在，不表示逐项核对过财报。分红仍为供应商数据，不伪称发行人核验。
+- 公告列表展示各条发布日期，避免将 7 日官方 RSS 窗口误写成近三日。
+
+English: Quote-session anchoring, timestamped XAU references, explicit partial-batch coverage, provider-based missing turnover and filing provenance gates apply to all aggregate reports. These checks neither authorize nor execute trades. Revert this PR as a unit to roll back.

@@ -10,7 +10,7 @@ import re
 _UNSUPPORTED_FLOW_CLAIM = re.compile(
     r"(主力|机构|大资金|资金)(?:[^\n，。:：；]{0,16})"
     r"(流入|流出|回流|进场|入场|撤离|抄底|护盘|抢筹|建仓|出逃)"
-    r"|资金承接|买盘匮乏|资金接力"
+    r"|资金承接|买盘匮乏|资金接力|主力资金介入|抄底盘|主动性买盘|买盘动能"
 )
 _EXPLICIT_UNCERTAINTY = re.compile(
     r"(未核验|未经核验|缺少|数据缺失|暂无|不可用|无法判断|无法推断|不推断|未证实|没有证据)"
@@ -23,10 +23,10 @@ def no_verified_flow_evidence(results):
     for result in results:
         context = getattr(result, "fundamental_context", None)
         if not isinstance(context, dict):
-            return False
+            continue
         flow = context.get("capital_flow")
         if not isinstance(flow, dict):
-            return False
+            continue
         status = str(flow.get("status") or "").lower()
         data = flow.get("data")
         if status == "ok" and data:

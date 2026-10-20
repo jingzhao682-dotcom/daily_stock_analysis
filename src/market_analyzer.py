@@ -580,7 +580,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             self._us_out_of_session_notes = []
             if core_dates:
                 session_date, count = Counter(core_dates).most_common(1)[0]
-                if count >= 2 or len(core_dates) == 1:
+                if count >= 2:
                     overview.date = session_date
                     included = []
                     for idx in overview.indices:
@@ -592,6 +592,10 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                                 f"与基准 {session_date} 不一致，已从当日指数统计排除"
                             )
                     overview.indices = included
+                else:
+                    overview.date = "N/A"
+            else:
+                overview.date = "N/A"
 
         # 2. 获取涨跌统计（A 股有，美股无等效数据）
         if self.profile.has_market_stats:
@@ -1503,7 +1507,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             ]
         else:
             lines = [
-                "#### 近三日市场线索",
+                "#### 市场线索（发布日期见各条来源）",
             ]
 
         for idx, item in enumerate(news[:5], 1):

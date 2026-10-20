@@ -3646,6 +3646,11 @@ class StockAnalysisPipeline:
                 except Exception as e:
                     logger.error(f"[{code}] 任务执行失败: {e}")
         
+        self._last_batch_coverage = {
+            "requested": list(stock_codes),
+            "failed": [code for code in stock_codes if code not in {r.code for r in results}],
+        }
+
         # 统计
         elapsed_time = time.time() - start_time
         
@@ -4448,4 +4453,12 @@ class StockAnalysisPipeline:
         else:
             report = self.notifier.generate_dashboard_report(results)
         from src.services.report_evidence_guard import redact_unverified_flow_lines
-        return redact_unverified_flow_lines(report, results)
+        report = redact_unverified_flow_lines(report, results)
+        coverage = getattr(self, "_last_batch_coverage", None)
+        if isinstance(coverage, dict) and coverage.get("failed"):
+            requested = coverage["requested"]
+            failed = coverage["failed"]
+            report = (f"> 分析覆盖不完整：请求 {len(requested)} 只，成功 {len(requested) - len(failed)} 只，"
+                      f"失败 {len(failed)} 只。未完成：{', '.join(failed)}。"
+                      "失败不代表剔除或卖出；请检查模型配额、可用性及数据源后重试。\n\n" + report)
+        return report

@@ -131,3 +131,20 @@ def test_market_qa_opt_in_report_stays_network_free():
         assert _valid_official_link("https://www.sec.gov/newsroom/press-releases/test", "sec.gov")
         assert not _valid_official_link("https://www.sec.gov.evil.invalid/x", "sec.gov")
         get.assert_not_called()
+
+
+def test_market_qa_blocks_next_day_vix_against_us_equity_closing_session():
+    # Reproduces 2026-10-20 Beijing morning: SPX/NDX/DJI still 10/19,
+    # while VIX provider advances its date to 10/20.
+    indices = [
+        SimpleNamespace(code=code, current=102, prev_close=100, change_pct=2,
+                        open=100.5, high=103, low=100,
+                        trade_date="2026-10-20" if code == "VIX" else "2026-10-19")
+        for code in ("SPX", "NDX", "DJI", "VIX")
+    ]
+    result = dict(audit_us_overview(indices, as_of=date(2026, 10, 20)))
+    assert result["SPX"].status == "usable_single_source"
+    assert result["NDX"].status == "usable_single_source"
+    assert result["DJI"].status == "usable_single_source"
+    assert result["VIX"].status == "blocked"
+    assert "交易日期不同" in " ".join(result["VIX"].reasons)

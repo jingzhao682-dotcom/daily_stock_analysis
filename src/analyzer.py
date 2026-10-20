@@ -4544,7 +4544,8 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | Revenue | {financial_report.get('revenue', 'N/A')} | |
 | Net Profit Attributable to Parent | {financial_report.get('net_profit_parent', 'N/A')} | |
 | Operating Cash Flow | {financial_report.get('operating_cash_flow', 'N/A')} | |
-| ROE | {financial_report.get('roe', 'N/A')} | |\n| Source evidence | {financial_evidence_note} | |
+| ROE | {financial_report.get('roe', 'N/A')} | |
+| Source evidence | {financial_evidence_note} | |
 | TTM Cash Dividend per Share | {ttm_cash} | Cash dividends only, pre-tax |
 | TTM Dividend Yield | {ttm_yield} | Formula: TTM cash dividend per share / current price × 100% |
 | TTM Dividend Events | {ttm_count} | |
@@ -4560,7 +4561,7 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | 营业收入 | {financial_report.get('revenue', 'N/A')} | |
 | 归母净利润 | {financial_report.get('net_profit_parent', 'N/A')} | |
 | 经营现金流 | {financial_report.get('operating_cash_flow', 'N/A')} | |
-| ROE | {financial_report.get('roe', 'N/A')} | |\n| Source evidence | {financial_evidence_note} | |
+| ROE | {financial_report.get('roe', 'N/A')} | |\n| 原始财报来源 | {financial_evidence_note} | |
 | 近12个月每股现金分红 | {ttm_cash} | 仅现金分红、税前口径 |
 | TTM 股息率 | {ttm_yield} | 公式：近12个月每股现金分红 / 当前价格 × 100% |
 | TTM 分红事件数 | {ttm_count} | |

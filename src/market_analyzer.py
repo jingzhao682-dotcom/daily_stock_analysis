@@ -2174,7 +2174,8 @@ Market conditions can change quickly. The data above is for reference only and d
             from src.services.gold_benchmarks import build_gold_benchmark_section
             from src.services.us_market_quality import render_us_market_quality_section
             report = report.rstrip() + "\n\n" + build_gold_benchmark_section()
-            report += "\n\n" + render_us_market_quality_section(overview.indices)
+            if os.getenv("US_MARKET_QUOTE_QA_ENABLED", "false").lower() in ("1", "true", "yes"):
+                report += "\n\n" + render_us_market_quality_section(overview.indices)
             if official_events is not None:
                 from src.services.official_news_events import render_official_event_section
                 report += "\n\n" + render_official_event_section(official_events)

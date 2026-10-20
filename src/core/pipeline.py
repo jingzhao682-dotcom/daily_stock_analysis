@@ -4442,7 +4442,10 @@ class StockAnalysisPipeline:
         """Generate aggregate report with backward-compatible notifier fallback."""
         generator = getattr(self.notifier, "generate_aggregate_report", None)
         if callable(generator):
-            return generator(results, report_type)
-        if report_type == ReportType.BRIEF and hasattr(self.notifier, "generate_brief_report"):
-            return self.notifier.generate_brief_report(results)
-        return self.notifier.generate_dashboard_report(results)
+            report = generator(results, report_type)
+        elif report_type == ReportType.BRIEF and hasattr(self.notifier, "generate_brief_report"):
+            report = self.notifier.generate_brief_report(results)
+        else:
+            report = self.notifier.generate_dashboard_report(results)
+        from src.services.report_evidence_guard import redact_unverified_flow_lines
+        return redact_unverified_flow_lines(report, results)

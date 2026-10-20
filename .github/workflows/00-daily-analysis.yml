@@ -449,6 +449,8 @@ jobs:
           # 避免直接写入 STOCK_LIST，保留同名 Environment variables 的 runner 环境值。
           STOCK_LIST_CONFIG: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'us' }}
+          OFFICIAL_NEWS_RSS_ENABLED: ${{ vars.OFFICIAL_NEWS_RSS_ENABLED || 'true' }}
+          US_MARKET_QUOTE_QA_ENABLED: ${{ vars.US_MARKET_QUOTE_QA_ENABLED || 'true' }}
           MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
           
           # ==========================================

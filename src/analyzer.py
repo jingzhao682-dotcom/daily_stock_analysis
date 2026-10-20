@@ -4533,7 +4533,8 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 financial_report = {"report_date": report_date}
             financial_evidence_note = (
                 evidence["url"] if evidence["verified"]
-                else "未经核验：缺少可信原始财报URL；财务数值已屏蔽"
+                else ("Unverified: official filing URL unavailable; financial values suppressed"
+                      if english else "未经核验：缺少可信原始财报URL；财务数值已屏蔽")
             )
             if english:
                 prompt += f"""

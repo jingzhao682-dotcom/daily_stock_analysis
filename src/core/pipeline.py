@@ -1098,7 +1098,22 @@ class StockAnalysisPipeline:
                 'signal_score': trend_result.signal_score,
                 'signal_reasons': trend_result.signal_reasons,
                 'risk_factors': trend_result.risk_factors,
+                'volume_ratio_5d': trend_result.volume_ratio_5d,
             }
+
+            # For US completed-session reports, derive both visible
+            # "volume ratio" and the AI trend wording from the SAME 5-prior-day
+            # share-volume computation. A missing ratio is not zero liquidity.
+            if get_market_for_stock(code) == 'us' and isinstance(enhanced.get('realtime'), dict):
+                ratio_5d = getattr(trend_result, 'volume_ratio_5d', 0) or 0
+                if ratio_5d > 0:
+                    enhanced['realtime']['volume_ratio'] = round(float(ratio_5d), 3)
+                    enhanced['realtime']['volume_ratio_desc'] = '日成交量÷前5个完整交易日均量'
+                    enhanced['realtime']['volume_ratio_basis'] = 'daily_vs_previous_5_sessions'
+                else:
+                    enhanced['realtime']['volume_ratio'] = None
+                    enhanced['realtime']['volume_ratio_desc'] = '有效历史成交量不足'
+                    enhanced['realtime']['volume_ratio_basis'] = 'unavailable'
 
         # Issue #234：盘中分析使用实时 OHLC 与趋势 MA 覆盖 today。
         # 防护条件：trend_result.ma5 > 0 表示 MA 计算已成功且数据量充足。

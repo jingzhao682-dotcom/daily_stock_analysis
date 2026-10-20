@@ -613,6 +613,15 @@ class StockAnalysisPipeline:
                     code,
                     fundamental_context,
                 )
+
+            # Gate the raw fundamental payload *before* it reaches either
+            # agent or legacy prompts, outcome storage and report templates.
+            # No original SEC filing URL => omit unsupported US statement
+            # line items. Other markets retain their native providers.
+            from src.services.filing_evidence import quarantine_unverified_financials
+            fundamental_context = quarantine_unverified_financials(
+                fundamental_context, market=market
+            )
             market_structure_context = self._build_market_structure_context(
                 code=code,
                 stock_name=stock_name,
@@ -1098,7 +1107,22 @@ class StockAnalysisPipeline:
                 'signal_score': trend_result.signal_score,
                 'signal_reasons': trend_result.signal_reasons,
                 'risk_factors': trend_result.risk_factors,
+                'volume_ratio_5d': trend_result.volume_ratio_5d,
             }
+
+            # For US completed-session reports, derive both visible
+            # "volume ratio" and the AI trend wording from the SAME 5-prior-day
+            # share-volume computation. A missing ratio is not zero liquidity.
+            if get_market_for_stock(normalize_stock_code(context.get('code', ''))) == 'us' and isinstance(enhanced.get('realtime'), dict):
+                ratio_5d = getattr(trend_result, 'volume_ratio_5d', 0) or 0
+                if ratio_5d > 0:
+                    enhanced['realtime']['volume_ratio'] = round(float(ratio_5d), 3)
+                    enhanced['realtime']['volume_ratio_desc'] = '日成交量÷前5个完整交易日均量'
+                    enhanced['realtime']['volume_ratio_basis'] = 'daily_vs_previous_5_sessions'
+                else:
+                    enhanced['realtime']['volume_ratio'] = None
+                    enhanced['realtime']['volume_ratio_desc'] = '有效历史成交量不足'
+                    enhanced['realtime']['volume_ratio_basis'] = 'unavailable'
 
         # Issue #234：盘中分析使用实时 OHLC 与趋势 MA 覆盖 today。
         # 防护条件：trend_result.ma5 > 0 表示 MA 计算已成功且数据量充足。
@@ -4418,7 +4442,10 @@ class StockAnalysisPipeline:
         """Generate aggregate report with backward-compatible notifier fallback."""
         generator = getattr(self.notifier, "generate_aggregate_report", None)
         if callable(generator):
-            return generator(results, report_type)
-        if report_type == ReportType.BRIEF and hasattr(self.notifier, "generate_brief_report"):
-            return self.notifier.generate_brief_report(results)
-        return self.notifier.generate_dashboard_report(results)
+            report = generator(results, report_type)
+        elif report_type == ReportType.BRIEF and hasattr(self.notifier, "generate_brief_report"):
+            report = self.notifier.generate_brief_report(results)
+        else:
+            report = self.notifier.generate_dashboard_report(results)
+        from src.services.report_evidence_guard import redact_unverified_flow_lines
+        return redact_unverified_flow_lines(report, results)

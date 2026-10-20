@@ -30,13 +30,13 @@ _MAX_FEED_BYTES = 1_000_000
 _MAX_AGE_DAYS = 7
 _MAX_EVENTS = 6
 _TAGS = (
-    (re.compile(r"\\b(?:fomc|federal funds|interest rate|monetary policy)\\b", re.I),
+    (re.compile(r"\b(?:fomc|federal funds|interest rate|monetary policy)\b", re.I),
      "monetary_policy", ("SPYM", "QQQM", "SGOV", "XAU/USD")),
-    (re.compile(r"\\b(?:securities|disclosure|filing|exchange.trade|etf)\\b", re.I),
+    (re.compile(r"\b(?:securities|disclosure|filing|exchange.trade|etf)\b", re.I),
      "market_regulation", ()),
-    (re.compile(r"\\b(?:nvidia|nvda)\\b", re.I),
+    (re.compile(r"\b(?:nvidia|nvda)\b", re.I),
      "issuer_announcement", ("NVDA", "SOXQ")),
-    (re.compile(r"\\b(?:memory chips|semiconductors|micron|dram)\\b", re.I),
+    (re.compile(r"\b(?:memory chips|semiconductors|micron|dram)\b", re.I),
      "industry_reference", ("SOXQ", "DRAM")),
 )
 
@@ -56,7 +56,7 @@ class OfficialEventBatch:
 
 def _plain_text(value: str, limit: int = 240) -> str:
     text = unescape(re.sub(r"<[^>]+>", " ", str(value or "")))
-    return re.sub(r"\\s+", " ", text).strip()[:limit]
+    return re.sub(r"\s+", " ", text).strip()[:limit]
 
 
 def _valid_official_link(value: str, host: str) -> bool:

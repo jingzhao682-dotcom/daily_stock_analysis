@@ -5270,7 +5270,17 @@ Output the complete Decision Dashboard in JSON format."""
             })
 
         source = today.get('data_source') or snapshot.get('source') or 'N/A'
-        timestamp = snapshot['quote_timestamp'] or 'N/A'
+        timestamp = snapshot['quote_timestamp']
+        if not timestamp:
+            valid_trade_date = str(snapshot.get('date') or '')
+            if len(valid_trade_date) == 10 and valid_trade_date[4] == '-' and valid_trade_date[7] == '-':
+                timestamp = (
+                    f"截至{valid_trade_date}交易日收盘（非实时逐笔行情）"
+                    if language == 'zh'
+                    else f"Close of {valid_trade_date} (not a live quote)"
+                )
+            else:
+                timestamp = 'N/A'
         basis_label = (
             ('同报价昨收' if is_realtime_bar else '同列日线价格对')
             if language == 'zh' else

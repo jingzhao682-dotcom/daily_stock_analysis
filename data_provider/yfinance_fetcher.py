@@ -213,7 +213,9 @@ class YfinanceFetcher(BaseFetcher):
                 start=start_date,
                 end=end_date,
                 progress=False,  # 禁止进度条
-                auto_adjust=True,  # 自动调整价格（复权）
+                # US ETF/stock prices must share the same *raw close* basis as
+                # the daily quote. Other markets retain their previous adjusted basis.
+                auto_adjust=not self._is_us_stock(stock_code),
                 multi_level_index=True
             )
 
@@ -837,41 +839,74 @@ class YfinanceFetcher(BaseFetcher):
 
             ticker = yf.Ticker(symbol)
 
-            # 尝试获取 fast_info（更快，但字段较少）
-            try:
-                info = ticker.fast_info
-                if info is None:
-                    raise ValueError("fast_info is None")
-
-                price = getattr(info, 'lastPrice', None) or getattr(info, 'last_price', None)
-                prev_close = getattr(info, 'previousClose', None) or getattr(info, 'previous_close', None)
-                open_price = getattr(info, 'open', None)
-                high = getattr(info, 'dayHigh', None) or getattr(info, 'day_high', None)
-                low = getattr(info, 'dayLow', None) or getattr(info, 'day_low', None)
-                volume = getattr(info, 'lastVolume', None) or getattr(info, 'last_volume', None)
-                market_cap = getattr(info, 'marketCap', None) or getattr(info, 'market_cap', None)
-
-            except Exception:
-                # 回退到 history 方法获取最新数据
-                logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
-                hist = ticker.history(period='2d')
-                if hist.empty:
-                    if is_us_symbol:
-                        logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据，尝试 Stooq 兜底")
-                        return self._get_us_stock_quote_from_stooq(symbol)
-                    logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据")
-                    return None
-
+            if is_us_symbol:
+                # Use one unadjusted OHLCV series for latest close and prior close.
+                # fast_info.previousClose may use a different adjustment/session
+                # basis from fast_info.lastPrice (observed on 2026-10-19 ETFs).
+                # Mixing the two produces incorrect daily returns and amplitudes.
+                hist = ticker.history(period='10d', auto_adjust=False, actions=False)
+                if hist is None or hist.empty:
+                    logger.warning(f"[Yfinance] {symbol} 原始日线不可用，尝试 Stooq 兜底")
+                    return self._get_us_stock_quote_from_stooq(symbol)
+                hist = hist.sort_index()
+                # One entry per *market session*. Never treat duplicated provider
+                # date rows as multiple trading days.
+                session_dates = pd.to_datetime(hist.index).date
+                hist = hist.loc[~pd.Index(session_dates).duplicated(keep='last')]
                 today = hist.iloc[-1]
-                prev = hist.iloc[-2] if len(hist) > 1 else today
-
-                price = float(today['Close'])
-                prev_close = float(prev['Close'])
-                open_price = float(today['Open'])
-                high = float(today['High'])
-                low = float(today['Low'])
-                volume = int(today['Volume'])
+                price = _safe_float(today.get('Close'))
+                prev_close = (_safe_float(hist.iloc[-2].get('Close'))
+                              if len(hist) >= 2 else None)
+                if price is None or not math.isfinite(price) or price <= 0:
+                    logger.warning(f"[Yfinance] {symbol} 原始收盘价无效，尝试 Stooq 兜底")
+                    return self._get_us_stock_quote_from_stooq(symbol)
+                if (prev_close is not None and
+                        (not math.isfinite(prev_close) or prev_close <= 0)):
+                    prev_close = None
+                trade_date = pd.Timestamp(hist.index[-1]).date().isoformat()
+                open_price = _safe_float(today.get('Open'))
+                high = _safe_float(today.get('High'))
+                low = _safe_float(today.get('Low'))
+                volume_value = _safe_float(today.get('Volume'))
+                volume = int(volume_value) if volume_value is not None and math.isfinite(volume_value) else None
                 market_cap = None
+            else:
+                trade_date = None
+                # 尝试获取 fast_info（更快，但字段较少）
+                try:
+                    info = ticker.fast_info
+                    if info is None:
+                        raise ValueError("fast_info is None")
+
+                    price = getattr(info, 'lastPrice', None) or getattr(info, 'last_price', None)
+                    prev_close = getattr(info, 'previousClose', None) or getattr(info, 'previous_close', None)
+                    open_price = getattr(info, 'open', None)
+                    high = getattr(info, 'dayHigh', None) or getattr(info, 'day_high', None)
+                    low = getattr(info, 'dayLow', None) or getattr(info, 'day_low', None)
+                    volume = getattr(info, 'lastVolume', None) or getattr(info, 'last_volume', None)
+                    market_cap = getattr(info, 'marketCap', None) or getattr(info, 'market_cap', None)
+
+                except Exception:
+                    # 回退到 history 方法获取最新数据
+                    logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
+                    hist = ticker.history(period='2d')
+                    if hist.empty:
+                        if is_us_symbol:
+                            logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据，尝试 Stooq 兜底")
+                            return self._get_us_stock_quote_from_stooq(symbol)
+                        logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据")
+                        return None
+
+                    today = hist.iloc[-1]
+                    prev = hist.iloc[-2] if len(hist) > 1 else today
+
+                    price = float(today['Close'])
+                    prev_close = float(prev['Close'])
+                    open_price = float(today['Open'])
+                    high = float(today['High'])
+                    low = float(today['Low'])
+                    volume = int(today['Volume'])
+                    market_cap = None
 
             # 计算涨跌幅
             change_amount = None
@@ -915,7 +950,8 @@ class YfinanceFetcher(BaseFetcher):
             quote = UnifiedRealtimeQuote(
                 code=symbol,
                 name=name,
-                source=RealtimeSource.FALLBACK,
+                source=RealtimeSource.YFINANCE if is_us_symbol else RealtimeSource.FALLBACK,
+                trade_date=trade_date,
                 market=suffix_market or ("hk" if _is_hk_market(stock_code) else "us" if is_us_symbol else None),
                 currency=str(ticker_info.get("currency") or "").upper() or None,
                 data_quality="partial" if missing_fields else "ok",

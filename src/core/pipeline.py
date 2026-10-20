@@ -1108,9 +1108,17 @@ class StockAnalysisPipeline:
                 if enhanced.get('yesterday') and isinstance(enhanced['yesterday'], dict):
                     yesterday_close = enhanced['yesterday'].get('close')
                 orig_today = enhanced.get('today') or {}
-                market_today = get_market_now(
-                    get_market_for_stock(normalize_stock_code(enhanced.get('code', '')))
-                ).date().isoformat()
+                context_market = get_market_for_stock(
+                    normalize_stock_code(enhanced.get('code', ''))
+                )
+                # Pre-market US reports must describe the last completed
+                # trading session, not label yesterday's close as today's.
+                if context_market == "us":
+                    market_today = get_effective_trading_date(
+                        context_market
+                    ).isoformat()
+                else:
+                    market_today = get_market_now(context_market).date().isoformat()
                 source = getattr(realtime_quote, 'source', None)
                 source_name = getattr(source, 'value', source)
                 source_name = str(source_name) if source_name is not None else 'unknown'
@@ -2764,9 +2772,19 @@ class StockAnalysisPipeline:
             return df
         if market is None:
             market = get_market_for_stock(code)
-        market_today = get_market_now(market).date()
+        market_now = get_market_now(market)
+        market_today = market_now.date()
         if market and not is_market_open(market, market_today):
             return df
+
+        if market == "us":
+            # Beijing-morning report runs in the next US calendar date while
+            # Yahoo still quotes the previous session. Never append that quote
+            # as a phantom new trading day's candle.
+            effective_day = get_effective_trading_date(market, current_time=market_now)
+            quote_day = getattr(realtime_quote, "trade_date", None)
+            if effective_day != market_today or quote_day != market_today.isoformat():
+                return df
 
         last_val = df['date'].max()
         last_date = (

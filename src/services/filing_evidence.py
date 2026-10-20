@@ -26,3 +26,48 @@ def audit_filing_reference(payload):
     except ValueError:
         return {"verified": False, "url": None, "reason": "invalid_url"}
     return {"verified": True, "url": url, "reason": "official_source_link_present"}
+
+
+def quarantine_unverified_financials(context, *, market="us"):
+    """Remove unsupported issuer income-statement figures from US research.
+
+    The original provider block may remain useful for debugging, but the LLM,
+    template and investment-report pipeline must not assert unaudited numbers
+    without issuer filing provenance. Does not modify the input object.
+    A trusted URL is a *reference gate*, not arithmetic verification of
+    the document's line items.
+    """
+    if market != "us" or not isinstance(context, dict):
+        return context
+
+    earnings = context.get("earnings")
+    if not isinstance(earnings, dict):
+        return context
+    data = earnings.get("data")
+    if not isinstance(data, dict):
+        return context
+    statement = data.get("financial_report")
+    if not isinstance(statement, dict) or not statement:
+        return context
+
+    result = dict(context)
+    gated = dict(earnings)
+    gated_data = dict(data)
+    evidence = audit_filing_reference(statement)
+    if not evidence["verified"]:
+        gated_data["financial_report"] = {
+            "report_date": statement.get("report_date"),
+            "verification_status": "unverified_source",
+            "verification_note": "financial line items suppressed: no SEC source link",
+        }
+        gated["data"] = gated_data
+        gated["status"] = "partial"
+    else:
+        gated_data["financial_report"] = {
+            **statement,
+            "verification_status": "official_link_present_not_line_item_verified",
+        }
+        gated["data"] = gated_data
+    result["earnings"] = gated
+    result["financial_evidence"] = evidence
+    return result

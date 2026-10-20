@@ -1,12 +1,11 @@
 name: 每日股票分析
 
 on:
-  # P1 仅首次合并时回放一轮真实日报（验证 AU0/XAUUSD/NDX）。
-  # 验收成功后从 main 删除本临时触发器，避免重复发送。
+  # P2 仅此次合并回放一次实际日报，验收完删除此 push 触发器。
   push:
     branches: [main]
     paths:
-      - 'tests/test_p1_gold_volume_filing.py'
+      - 'tests/test_official_news_market_qa.py'
   # 美股观察：北京时间周二至周六 08:15（UTC 00:15），复盘美股上一交易日
   schedule:
     - cron: '15 0 * * 2-6'     # 周二至周六，北京时间 08:15（GitHub Actions 可能延迟）
@@ -449,6 +448,8 @@ jobs:
           # 避免直接写入 STOCK_LIST，保留同名 Environment variables 的 runner 环境值。
           STOCK_LIST_CONFIG: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'us' }}
+          OFFICIAL_NEWS_RSS_ENABLED: ${{ vars.OFFICIAL_NEWS_RSS_ENABLED || 'true' }}
+          US_MARKET_QUOTE_QA_ENABLED: ${{ vars.US_MARKET_QUOTE_QA_ENABLED || 'true' }}
           MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
           
           # ==========================================

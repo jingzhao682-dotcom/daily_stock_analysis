@@ -5214,7 +5214,7 @@ Output the complete Decision Dashboard in JSON format."""
         if is_realtime_bar:
             # The synthetic realtime row is stamped with the run day, which
             # can differ from the quote's exchange session on weekends.
-            data_date = 'N/A'
+            data_date = today.get('trade_date') or realtime.get('trade_date') or 'N/A'
             if quote_timestamp:
                 try:
                     stamp = datetime.fromisoformat(str(quote_timestamp).replace('Z', '+00:00'))

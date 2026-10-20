@@ -40,10 +40,11 @@ class AugmentRealtimeMarketDateTestCase(unittest.TestCase):
         mock_now.return_value = us_market_now
 
         df = _make_df([(date(2026, 3, 26), 150.0)])
-        quote = SimpleNamespace(price=155.0, open_price=151.0, high=156.0, low=149.0, volume=200, amount=None, change_pct=3.0, pre_close=None)
+        quote = SimpleNamespace(price=155.0, open_price=151.0, high=156.0, low=149.0, volume=200, amount=None, change_pct=3.0, pre_close=None, trade_date="2026-03-27")
 
         pipeline = _make_pipeline()
-        result = pipeline._augment_historical_with_realtime(df, quote, "AAPL")
+        with patch("src.core.pipeline.get_effective_trading_date", return_value=date(2026, 3, 27)):
+            result = pipeline._augment_historical_with_realtime(df, quote, "AAPL")
 
         self.assertEqual(len(result), 2)
         appended_date = result.iloc[-1]["date"]
@@ -61,10 +62,11 @@ class AugmentRealtimeMarketDateTestCase(unittest.TestCase):
         mock_now.return_value = datetime(2026, 3, 27, 17, 0)
 
         df = _make_df([(date(2026, 3, 26), 150.0), (date(2026, 3, 27), 152.0)])
-        quote = SimpleNamespace(price=155.0, open_price=151.0, high=156.0, low=149.0, volume=200, amount=None, change_pct=3.0, pre_close=None)
+        quote = SimpleNamespace(price=155.0, open_price=151.0, high=156.0, low=149.0, volume=200, amount=None, change_pct=3.0, pre_close=None, trade_date="2026-03-27")
 
         pipeline = _make_pipeline()
-        result = pipeline._augment_historical_with_realtime(df, quote, "AAPL")
+        with patch("src.core.pipeline.get_effective_trading_date", return_value=date(2026, 3, 27)):
+            result = pipeline._augment_historical_with_realtime(df, quote, "AAPL")
 
         self.assertEqual(len(result), 2)
         self.assertEqual(result.iloc[-1]["close"], 155.0)

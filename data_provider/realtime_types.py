@@ -102,6 +102,7 @@ class RealtimeSource(Enum):
     TENCENT = "tencent"             # 腾讯直连
     SINA = "sina"                   # 新浪直连
     STOOQ = "stooq"                 # Stooq 美股兜底
+    YFINANCE = "yfinance"             # Yahoo Finance 原始日线行情
     LONGBRIDGE = "longbridge"       # 长桥（美股/港股兜底）
     FUTU = "futu"                   # 富途 OpenD（港股）
     FALLBACK = "fallback"           # 降级兜底
@@ -124,6 +125,7 @@ class UnifiedRealtimeQuote:
     # === 数据质量元数据（由 DataFetcherManager 统一补齐）===
     fetched_at: Optional[str] = None             # 本系统获取时间（ISO 8601 datetime）
     provider_timestamp: Optional[str] = None     # Provider 真实行情时间（ISO 8601 datetime）
+    trade_date: Optional[str] = None              # 最近一根行情日线的市场交易日期（YYYY-MM-DD）
     is_stale: Optional[bool] = None              # provider_timestamp 超过最小 TTL 阈值时为 True
     stale_seconds: Optional[int] = None          # provider_timestamp 距 fetched_at 的秒数
     fallback_from: Optional[str] = None          # 整源 fallback 的失败首选源 token
@@ -170,7 +172,7 @@ class UnifiedRealtimeQuote:
         }
         # 只添加非 None 的字段
         optional_fields = [
-            'fetched_at', 'provider_timestamp', 'is_stale', 'stale_seconds',
+            'fetched_at', 'provider_timestamp', 'trade_date', 'is_stale', 'stale_seconds',
             'fallback_from', 'market', 'currency', 'data_quality', 'missing_fields',
             'price', 'change_pct', 'change_amount', 'volume', 'amount',
             'volume_ratio', 'turnover_rate', 'amplitude',

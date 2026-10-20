@@ -616,6 +616,16 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                     )
                     indices.append(index)
 
+            if self.region == "us":
+                # Index substitution must also hold if a secondary data
+                # provider still returns a Nasdaq Composite row.
+                indices = [
+                    item for item in indices
+                    if str(item.code).upper().lstrip("^") not in ("IXIC", "NASDAQ")
+                ]
+                if not any(str(item.code).upper().lstrip("^") == "NDX" for item in indices):
+                    logger.warning("[大盘] Nasdaq-100 NDX 行情未获得，绝不回退为纳斯达克综合指数")
+
             if not indices:
                 logger.warning("[大盘] %s action=get_main_indices status=empty", self._log_context())
             else:
@@ -1406,6 +1416,16 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 f"{self._format_optional_number(idx.open)} | {self._format_optional_number(idx.high)} | "
                 f"{self._format_optional_number(idx.low)} | {self._format_optional_pct(idx.amplitude)} | {amount_str} |"
             )
+        if self.region == "us":
+            represented = {str(idx.code).upper().lstrip("^") for idx in overview.indices}
+            for code, label in (
+                ("SPX", "标普500指数"), ("NDX", "纳斯达克100指数"),
+                ("DJI", "道琼斯指数"), ("VIX", "VIX恐慌指数")
+            ):
+                if code not in represented:
+                    lines.append(
+                        f"| {label} | N/A | N/A | N/A | N/A | N/A | N/A | N/A |"
+                    )
         return "\n".join(lines)
 
     def _build_sector_block(self, overview: MarketOverview) -> str:

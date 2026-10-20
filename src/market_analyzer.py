@@ -2149,11 +2149,35 @@ Market conditions can change quickly. The data above is for reference only and d
         news = self.search_market_news()
         news = self._merge_persisted_market_intelligence(news)
 
+        # Official publisher RSS is explicitly opt-in for production jobs,
+        # avoiding network requests in existing offline tests / local runs.
+        official_events = None
+        if self.region == "us":
+            import os
+            if os.getenv("OFFICIAL_NEWS_RSS_ENABLED", "false").lower() in ("1", "true", "yes"):
+                from src.services.official_news_events import collect_official_events
+                official_events = collect_official_events()
+                # Keep existing news if configured; publisher-verified references
+                # add factual evidence, not an AI-generated reason for price moves.
+                existing_urls = {
+                    str(self._get_news_field(item, "url") or "").lower()
+                    for item in (news or [])
+                }
+                news = list(news or []) + [
+                    item for item in official_events.results
+                    if item.url.lower() not in existing_urls
+                ]
+
         # 3. 生成复盘报告
         report = self.generate_market_review(overview, news)
         if self.region == "us":
             from src.services.gold_benchmarks import build_gold_benchmark_section
+            from src.services.us_market_quality import render_us_market_quality_section
             report = report.rstrip() + "\n\n" + build_gold_benchmark_section()
+            report += "\n\n" + render_us_market_quality_section(overview.indices)
+            if official_events is not None:
+                from src.services.official_news_events import render_official_event_section
+                report += "\n\n" + render_official_event_section(official_events)
         snapshot = self.build_market_light_snapshot(overview) if self._supports_market_light() else None
         structured_payload = self.build_market_review_payload(
             overview,

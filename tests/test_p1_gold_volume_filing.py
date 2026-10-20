@@ -65,3 +65,37 @@ def test_us_index_list_uses_ndx_not_ixic():
     symbols = {x["code"] for x in rows}
     assert "NDX" in symbols
     assert "IXIC" not in symbols
+
+
+
+def test_unverified_institutional_flow_is_suppressed_deterministically():
+    from types import SimpleNamespace
+    from src.services.report_evidence_guard import redact_unverified_flow_lines
+    unsupported = SimpleNamespace(fundamental_context={
+        "capital_flow": {"status": "not_supported", "data": {}}
+    })
+    report = "日量比0.64倍\n主力资金入场护盘明显。\n资金流数据缺失，无法判断。\n"
+    cleaned = redact_unverified_flow_lines(report, [unsupported])
+    assert "日量比0.64倍" in cleaned
+    assert "主力资金入场护盘明显" not in cleaned
+    assert "相关推断已隐藏" in cleaned
+    assert "资金流数据缺失，无法判断" in cleaned
+    evidenced = SimpleNamespace(fundamental_context={
+        "capital_flow": {"status": "ok", "data": {"latest": [{"amount": 1}]}}
+    })
+    assert redact_unverified_flow_lines(report, [evidenced]) == report
+
+
+def test_unverified_us_income_statement_is_quarantined_before_prompt():
+    from src.services.filing_evidence import quarantine_unverified_financials
+    source = {"earnings": {"status": "ok", "data": {"financial_report": {
+        "report_date": "2026-06-30", "revenue": 7800000, "net_profit_parent": -540000
+    }, "dividend": {"ttm_event_count": 0}}},
+    "capital_flow": {"status": "not_supported", "data": {}}}
+    guarded = quarantine_unverified_financials(source, market="us")
+    statement = guarded["earnings"]["data"]["financial_report"]
+    assert "revenue" not in statement
+    assert "net_profit_parent" not in statement
+    assert guarded["earnings"]["data"]["dividend"]["ttm_event_count"] == 0
+    assert source["earnings"]["data"]["financial_report"]["revenue"] == 7800000
+    assert quarantine_unverified_financials(source, market="hk") is source

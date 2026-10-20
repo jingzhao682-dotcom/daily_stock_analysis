@@ -1,12 +1,6 @@
 name: 每日股票分析
 
 on:
-  # 仅在本轮回归测试文件首次合入 main 时重跑一次真实报告。
-  # 后续代码/配置普通推送不会自动重复发送。
-  push:
-    branches: [main]
-    paths:
-      - 'tests/test_us_quote_ma_20261019.py'
   # 美股观察：北京时间周二至周六 08:15（UTC 00:15），复盘美股上一交易日
   schedule:
     - cron: '15 0 * * 2-6'     # 周二至周六，北京时间 08:15（GitHub Actions 可能延迟）

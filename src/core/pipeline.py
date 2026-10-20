@@ -613,6 +613,15 @@ class StockAnalysisPipeline:
                     code,
                     fundamental_context,
                 )
+
+            # Gate the raw fundamental payload *before* it reaches either
+            # agent or legacy prompts, outcome storage and report templates.
+            # No original SEC filing URL => omit unsupported US statement
+            # line items. Other markets retain their native providers.
+            from src.services.filing_evidence import quarantine_unverified_financials
+            fundamental_context = quarantine_unverified_financials(
+                fundamental_context, market=market
+            )
             market_structure_context = self._build_market_structure_context(
                 code=code,
                 stock_name=stock_name,

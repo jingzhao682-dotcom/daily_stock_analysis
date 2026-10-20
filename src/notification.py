@@ -2253,7 +2253,7 @@ class NotificationService(
 
         from src.services.filing_evidence import quarantine_unverified_financials
         from src.market_context import detect_market
-        ctx = quarantine_unverified_financials(ctx, market=detect_market(result.code))
+        ctx = quarantine_unverified_financials(ctx, market=detect_market(getattr(result, "code", None)))
 
         earnings_block = ctx.get("earnings") if isinstance(ctx.get("earnings"), dict) else {}
         earnings_data = earnings_block.get("data") if isinstance(earnings_block.get("data"), dict) else {}

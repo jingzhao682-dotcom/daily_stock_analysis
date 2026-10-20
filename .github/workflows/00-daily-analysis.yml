@@ -480,10 +480,11 @@ jobs:
             exit 1
           fi
 
-          # 美股试运行：扩展黄金 GLD、白银 SLV、SpaceX SPCX。
-          # 私有基础观察名单仍从 GitHub Actions Variables / Secrets 中读取。
-          # 去重避免用户已把扩展标的加入 STOCK_LIST 时重复分析。
-          for extra_symbol in GLD SLV SPCX; do
+          # 黄金 ETF (GLD / GLDM) 改为大盘报告中独立的 XAU/USD 和沪金 AU0 基准。
+          # 移除旧黄金 ETF 观察代码；保留其他私人监测标的。
+          STOCK_LIST="$(printf '%s' "$STOCK_LIST" | tr ',' '\n' | awk 'BEGIN{IGNORECASE=1} toupper($0)!="GLD" && toupper($0)!="GLDM" && length($0)>0 {print}' | paste -sd, -)"
+          # 白银 SLV 和 SpaceX SPCX 继续监测。
+          for extra_symbol in SLV SPCX; do
             if [[ ",${STOCK_LIST}," != *",${extra_symbol},"* ]]; then
               STOCK_LIST="${STOCK_LIST},${extra_symbol}"
             fi

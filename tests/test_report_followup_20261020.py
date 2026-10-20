@@ -110,3 +110,30 @@ def test_invalid_live_gold_never_becomes_a_verified_quote(override):
         report = build_gold_benchmark_section()
     assert report.count("数据缺失") == 2
     assert "4121.60" not in report
+
+
+def test_all_failed_batch_still_saves_coverage_without_sending():
+    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline.max_workers = 1
+    pipeline.config = SimpleNamespace(single_stock_notify=False, report_type="simple", analysis_delay=0)
+    pipeline.fetcher_manager = Mock()
+    pipeline.process_single_stock = Mock(return_value=SimpleNamespace(success=False, error_message="model unavailable"))
+    pipeline.notifier = SimpleNamespace(generate_aggregate_report=Mock(return_value="# report"),
+                                        save_report_to_file=Mock(return_value="reports/failure.md"))
+    pipeline._send_notifications = Mock()
+    assert pipeline.run(["NVDA"], send_notification=False) == []
+    saved = pipeline.notifier.save_report_to_file.call_args.args[0]
+    assert "请求 1 只，成功 0 只，失败 1 只" in saved
+    assert "NVDA" in saved
+    pipeline._send_notifications.assert_not_called()
+
+
+def test_success_coverage_uses_requested_identity_when_result_is_normalized():
+    pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+    pipeline.max_workers = 1
+    pipeline.config = SimpleNamespace(single_stock_notify=False, report_type="simple", analysis_delay=0)
+    pipeline.fetcher_manager = Mock()
+    pipeline.process_single_stock = Mock(return_value=SimpleNamespace(code="NVDA", success=True))
+    pipeline._save_local_report = Mock()
+    pipeline.run(["nvda"], send_notification=False)
+    assert pipeline._last_batch_coverage == {"requested": ["nvda"], "failed": []}

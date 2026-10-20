@@ -3587,6 +3587,7 @@ class StockAnalysisPipeline:
             )
         
         results: List[AnalysisResult] = []
+        completed_codes = set()
         
         # 使用线程池并发处理
         # 注意：max_workers 设置较低（默认3）以避免触发反爬
@@ -3621,6 +3622,7 @@ class StockAnalysisPipeline:
                 try:
                     result = future.result()
                     if result and result.success:
+                        completed_codes.add(code)
                         results.append(result)
                         if single_stock_notify and send_notification and not dry_run:
                             self._send_single_stock_notification(
@@ -3648,7 +3650,7 @@ class StockAnalysisPipeline:
         
         self._last_batch_coverage = {
             "requested": list(stock_codes),
-            "failed": [code for code in stock_codes if code not in {r.code for r in results}],
+            "failed": [code for code in stock_codes if code not in completed_codes],
         }
 
         # 统计
@@ -3682,7 +3684,7 @@ class StockAnalysisPipeline:
         logger.info(f"成功: {success_count}, 失败: {fail_count}, 耗时: {elapsed_time:.2f} 秒")
         
         # 保存报告到本地文件（无论是否推送通知都保存）
-        if results and not dry_run:
+        if not dry_run and (results or self._last_batch_coverage["failed"]):
             self._save_local_report(results, report_type)
 
         # 发送通知（单股推送模式下跳过汇总推送，避免重复）

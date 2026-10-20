@@ -17,7 +17,7 @@ def test_filing_requires_official_url_and_date():
 def test_gold_benchmarks_fail_closed_with_explicit_units():
     with patch("yfinance.Ticker", side_effect=Exception("provider blocked")), patch(
         "akshare.futures_main_sina", side_effect=Exception("provider blocked")
-    ):
+    ), patch("pandas.read_csv", side_effect=Exception("provider blocked")):
         report = build_gold_benchmark_section()
     assert "国际黄金现货" in report
     assert "上海期货交易所沪金主力" in report

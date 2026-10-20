@@ -1,11 +1,6 @@
 name: 每日股票分析
 
 on:
-  # 仅本次修复合并后回放；push 验收只保存产物，不发送通知。
-  push:
-    branches: [main]
-    paths:
-      - 'tests/test_report_followup_20261020.py'
   # 美股观察：北京时间周二至周六 08:15（UTC 00:15），复盘美股上一交易日
   schedule:
     - cron: '15 0 * * 2-6'     # 周二至周六，北京时间 08:15（GitHub Actions 可能延迟）
@@ -593,11 +588,6 @@ jobs:
           if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             FORCE_RUN_ARG="--force-run"
             echo "⚡ 已启用强制运行模式（跳过交易日检查）"
-          fi
-
-          # 合并后的验收回放只保存产物；定时和手动通知配置保持不变。
-          if [ "${{ github.event_name }}" = "push" ]; then
-            FORCE_RUN_ARG="$FORCE_RUN_ARG --no-notify"
           fi
 
           # 执行分析

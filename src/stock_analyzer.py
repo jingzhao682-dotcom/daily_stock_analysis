@@ -222,7 +222,9 @@ class StockTrendAnalyzer:
             return result
         
         # 确保数据按日期排序
-        df = df.sort_values('date').reset_index(drop=True)
+        df = df.sort_values('date').drop_duplicates(
+            subset=['date'], keep='last'
+        ).reset_index(drop=True)
         
         # 计算均线
         df = self._calculate_mas(df)

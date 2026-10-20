@@ -4345,7 +4345,7 @@ Index text.
             }
         ])
 
-        assert "#### 近三日市场线索" in result
+        assert "#### 市场线索（发布日期见各条来源）" in result
         assert "| 序号 |" not in result
         assert "摘要/线索片段" not in result
         assert "关注点" not in result

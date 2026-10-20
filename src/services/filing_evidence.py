@@ -61,6 +61,7 @@ def quarantine_unverified_financials(context, *, market="us"):
     if not evidence["verified"]:
         gated_data["financial_report"] = {
             "report_date": statement.get("report_date"),
+            "currency": statement.get("currency"),
             "verification_status": "unverified_source",
             "verification_note": "financial line items suppressed: no SEC source link",
         }

@@ -59,8 +59,8 @@ def test_legacy_context_is_gated_again_at_financial_render_boundary():
     result = AnalysisResult(code="NVDA", name="NVDA", sentiment_score=45,
                             trend_prediction="mixed", operation_advice="观望")
     result.fundamental_context = {
-        "earnings": {"data": {"financial_report": {"report_date": "2026-07-31"},
-                              "dividend": {"ttm_event_count": 4}}},
+        "earnings": {"data": {"financial_report": {"report_date": "2026-07-31", "currency": "USD"},
+                              "dividend": {"ttm_event_count": 4, "ttm_cash_dividend_per_share": 1.05}}},
         "growth": {"data": {"roe": 117.21, "gross_margin": 74.67}},
     }
     lines = []
@@ -69,6 +69,7 @@ def test_legacy_context_is_gated_again_at_financial_render_boundary():
     assert "117.21" not in text and "74.67" not in text
     assert "缺少 SEC" in text
     assert "股东回报" in text
+    assert "1.0500 美元" in text
 
 
 def test_saved_and_sent_aggregate_common_path_discloses_failed_symbols():

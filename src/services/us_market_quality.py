@@ -127,6 +127,27 @@ def audit_us_overview(indices, *, as_of=None):
                 trade_date=item.trade_date,
                 as_of=report_day,
             )))
+    # A Beijing-morning run may mix previous US *closing* equity indexes
+    # with a new-day/pre-market VIX snapshot. Such an index pair must not be
+    # compared or averaged as if observed in the same trading session.
+    equity_dates = [
+        audit.trade_date for code, audit in rows
+        if code in ("SPX", "NDX", "DJI")
+        and audit.status != "blocked" and audit.trade_date
+    ]
+    if len(equity_dates) >= 2:
+        from collections import Counter
+        reference_day, votes = Counter(equity_dates).most_common(1)[0]
+        if votes >= 2:
+            rows = [
+                (code, QuoteAudit(
+                    "blocked",
+                    audit.reasons + ("交易日期不同于当日股票指数基准 " + reference_day,),
+                    audit.trade_date,
+                    audit.independent_checked,
+                )) if audit.status != "blocked" and audit.trade_date != reference_day else (code, audit)
+                for code, audit in rows
+            ]
     return rows
 
 

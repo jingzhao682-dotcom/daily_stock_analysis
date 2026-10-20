@@ -144,3 +144,31 @@ def test_market_review_excludes_vix_from_other_session():
     assert [x.code for x in result.indices] == ["SPX", "NDX", "DJI"]
     assert "VIX" in analyzer._us_out_of_session_notes[0]
     assert "2026-10-20" in analyzer._us_out_of_session_notes[0]
+
+def test_unsourced_issuer_growth_percentages_are_removed():
+    from src.services.filing_evidence import quarantine_unverified_financials
+    context = {
+        "earnings": {"status": "ok", "data": {"financial_report": {
+            "report_date": "2026-06-30", "revenue": 10000
+        }}},
+        "growth": {"status": "ok", "data": {
+            "revenue_yoy": 91.94, "net_profit_yoy": 46.33,
+            "gross_margin": 51.88
+        }},
+    }
+    sanitized = quarantine_unverified_financials(context, market="us")
+    assert sanitized["growth"]["data"] == {}
+    assert sanitized["growth"]["status"] == "partial"
+    assert context["growth"]["data"]["gross_margin"] == 51.88
+
+
+def test_unsupported_capital_absorption_is_redacted():
+    from types import SimpleNamespace
+    from src.services.report_evidence_guard import redact_unverified_flow_lines
+    evidence_absent = SimpleNamespace(fundamental_context={
+        "capital_flow": {"status": "not_supported", "data": {}}
+    })
+    source = "缩量上涨，缺乏资金承接。\n"
+    sanitized = redact_unverified_flow_lines(source, [evidence_absent])
+    assert "缺乏资金承接" not in sanitized
+    assert "已隐藏" in sanitized

@@ -224,12 +224,16 @@ def _parse_csv_report(content: bytes, text: str, *, account: str | None, today: 
             raise IBKRFlexError("Flex CSV row does not match its section header")
         sections[header].append(dict(zip(header, values)))
 
-    position_header = next((h for h in sections if {"Symbol", "Quantity", "CostBasisMoney", "PositionValue", "FifoPnlUnrealized", "CurrencyPrimary", "ReportDate"} <= set(h)), None)
-    cash_header = next((h for h in sections if {"EndingCash", "Dividends", "Commissions", "Deposit/Withdrawals", "FromDate", "ToDate"} <= set(h)), None)
-    if position_header is None or cash_header is None or len(sections[cash_header]) != 1:
+    position_headers = [h for h in sections if {"Symbol", "Quantity", "CostBasisMoney", "PositionValue", "FifoPnlUnrealized", "CurrencyPrimary", "ReportDate"} <= set(h)]
+    cash_headers = [h for h in sections if {"EndingCash", "Dividends", "Commissions", "Deposit/Withdrawals", "FromDate", "ToDate"} <= set(h)]
+    if len(position_headers) != 1 or len(cash_headers) != 1 or len(sections[cash_headers[0]]) != 1:
         raise IBKRFlexError("Flex CSV must include one positions section and one cash/activity summary")
+    position_header = position_headers[0]
+    cash_header = cash_headers[0]
     all_rows = [row for rows in sections.values() for row in rows]
-    accounts = {row.get("ClientAccountID", "") for row in all_rows if row.get("ClientAccountID")}
+    if any(not row.get("ClientAccountID") for row in all_rows):
+        raise IBKRFlexError("Flex CSV contains a row without an account identifier")
+    accounts = {row.get("ClientAccountID", "") for row in all_rows}
     if account:
         if account.strip() not in accounts:
             raise IBKRFlexError("Selected account is not present in the Flex CSV")
@@ -269,11 +273,11 @@ def _parse_csv_report(content: bytes, text: str, *, account: str | None, today: 
         if quantity == 0 or quantity * cost < 0 or abs((value - cost) - pnl) > Decimal("0.02"):
             raise IBKRFlexError("Flex CSV position quantity, cost, value and P&L disagree")
         positions.append({
-            "symbol": symbol, "asset_category": "STK", "currency": currency,
+            "symbol": symbol, "asset_category": "UNKNOWN", "currency": currency,
             "quantity": float(quantity), "avg_cost": float(cost / quantity),
             "mark_price": float(value / quantity), "market_value_base": float(value),
             "cost_basis_base": float(cost), "fx_rate_to_base": 1.0,
-            "unrealized_pnl_base": float(pnl), "analysis_supported": currency == "USD",
+            "unrealized_pnl_base": float(pnl), "analysis_supported": False,
         })
     market_value = sum(row["market_value_base"] for row in positions)
     cash = float(_csv_number(cash_row, "EndingCash"))
@@ -282,7 +286,8 @@ def _parse_csv_report(content: bytes, text: str, *, account: str | None, today: 
         row["weight_of_reported_assets_pct"] = row["market_value_base"] / assets * 100 if assets > 0 else None
     age_days = (reference_date - report_date).days
     limitations = ["statement_snapshot_not_live", "cash_plus_positions_not_broker_nav", "cost_fx_at_statement_rate_not_total_return",
-                   "csv_lacks_contract_exchange_asset_type_and_fx", "no_etf_lookthrough_or_historical_drawdown", "no_target_allocation_configured"]
+                   "csv_lacks_contract_exchange_asset_type_and_fx", "csv_positions_not_verified_for_symbol_analysis",
+                   "no_etf_lookthrough_or_historical_drawdown", "no_target_allocation_configured"]
     if age_days > MAX_REPORT_AGE_DAYS:
         limitations.append("stale_statement")
     trade_headers = [h for h in sections if {"TradeDate", "TradePrice", "IBCommission", "Buy/Sell"} <= set(h)]

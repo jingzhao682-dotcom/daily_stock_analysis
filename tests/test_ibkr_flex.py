@@ -42,6 +42,31 @@ def parse(root, **kw):
     return parse_report(xml(root), today=TODAY, **kw)
 
 
+
+def csv_report(*, duplicate=False, bad_pnl=False, omit_trade_header=False, omit_cash_header=False):
+    day = REPORT_DAY.strftime("%Y%m%d")
+    pnl = "199" if bad_pnl else "200"
+    rows = [
+        '"ClientAccountID","Symbol","TotalRealizedPnl","TotalUnrealizedPnl","TotalFifoPnl","ReportDate"',
+        f'"U_TEST_PRIVATE","QQQM","0","200","200","{day}"',
+        '"ClientAccountID","StartingCash","EndingCash","Dividends","Commissions","Deposit/Withdrawals","FromDate","ToDate"',
+        f'"U_TEST_PRIVATE","8000","8000","0","0","0","{day}","{day}"',
+        '"ClientAccountID","Symbol","Quantity","CostBasisMoney","PositionValue","FifoPnlUnrealized","CurrencyPrimary","ReportDate"',
+        f'"U_TEST_PRIVATE","QQQM","10","1800","2000","{pnl}","USD","{day}"',
+    ]
+    if duplicate:
+        rows.append(f'"U_TEST_PRIVATE","QQQM","10","1800","2000","200","USD","{day}"')
+    rows += [
+        '"ClientAccountID","Symbol","TradeDate","Quantity","TradePrice","IBCommission","Buy/Sell","CurrencyPrimary","ReportDate"',
+        '"ClientAccountID","Symbol","Date/Time","Amount","Type","CurrencyPrimary","ReportDate"',
+    ]
+    if omit_trade_header:
+        rows.remove('"ClientAccountID","Symbol","TradeDate","Quantity","TradePrice","IBCommission","Buy/Sell","CurrencyPrimary","ReportDate"')
+    if omit_cash_header:
+        rows.remove('"ClientAccountID","Symbol","Date/Time","Amount","Type","CurrencyPrimary","ReportDate"')
+    return ("\n".join(rows) + "\n").encode()
+
+
 def test_snapshot_has_one_consistent_currency_basis_without_account_identity():
     value = parse(report())
     assert value["reported_assets_total"] == 10000

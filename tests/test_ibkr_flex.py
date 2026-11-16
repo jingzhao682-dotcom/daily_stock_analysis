@@ -80,45 +80,6 @@ def test_snapshot_has_one_consistent_currency_basis_without_account_identity():
     assert parse(report())["report_fingerprint"] == value["report_fingerprint"]
 
 
-def test_repeated_header_csv_matches_actual_flex_export_contract_without_identity():
-    value = parse_report(csv_report(), today=TODAY)
-    assert value["format"] == "csv" and value["as_of"] == REPORT_DAY.isoformat()
-    assert value["reported_assets_total"] == 10000
-    assert value["positions"][0]["avg_cost"] == 180
-    assert value["positions"][0]["mark_price"] == 200
-    assert value["positions"][0]["weight_of_reported_assets_pct"] == 20
-    assert value["activity"]["trade_rows"] == 0
-    assert value["activity"]["cash_transaction_rows"] == 0
-    assert "U_TEST_PRIVATE" not in str(value)
-    assert "csv_lacks_contract_exchange_asset_type_and_fx" in value["limitations"]
-
-
-@pytest.mark.parametrize("raw", [csv_report(duplicate=True), csv_report(bad_pnl=True)])
-def test_csv_duplicate_or_inconsistent_positions_fail_closed(raw):
-    with pytest.raises(IBKRFlexError):
-        parse_report(raw, today=TODAY)
-
-
-
-@pytest.mark.parametrize("raw", [csv_report(omit_trade_header=True), csv_report(omit_cash_header=True)])
-def test_csv_requires_trade_and_cash_transaction_section_headers(raw):
-    with pytest.raises(IBKRFlexError, match="preserve exactly one"):
-        parse_report(raw, today=TODAY)
-
-
-def test_snapshot_has_one_consistent_currency_basis_without_account_identity():
-    value = parse(report())
-    assert value["reported_assets_total"] == 10000
-    assert value["total_cash"] == 8000
-    assert value["positions"][0]["weight_of_reported_assets_pct"] == 20
-    assert value["positions"][0]["unrealized_pnl_base"] == 200
-    assert value["as_of"] == REPORT_DAY.isoformat()
-    assert value["read_only"] is True and value["data_quality"] == "partial"
-    assert "U_TEST_PRIVATE" not in str(value)
-    assert "cash_plus_positions_not_broker_nav" in value["limitations"]
-    assert parse(report())["report_fingerprint"] == value["report_fingerprint"]
-
-
 def test_fx_and_summary_cash_are_not_added_twice():
     root = report(currency="EUR", fxRateToBase="1.2", listingExchange="IBIS")
     cash = root.find("./FlexStatements/FlexStatement/CashReport")

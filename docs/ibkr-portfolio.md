@@ -1,6 +1,6 @@
 # IBKR 持仓只读导入（第一阶段）
 
-本阶段复用现有持仓上下文、分析任务队列和报告模板，将本机 IBKR Activity Flex XML 接入股票分析。默认运行方式、STOCK_LIST、Gemini、邮件和 GitHub cron 均不变。没有 IBKR 登录、交易连接或订单接口，也不会把快照伪造成历史买入事件。
+本阶段复用现有持仓上下文、分析任务队列和报告模板，将本机 IBKR Activity Flex XML 或多区段 CSV 接入股票分析。默认运行方式、STOCK_LIST、Gemini、邮件和 GitHub cron 均不变。没有 IBKR 登录、交易连接或订单接口，也不会把快照伪造成历史买入事件。
 
 ## 本阶段能做什么
 
@@ -13,7 +13,7 @@
 
 ## 准备 IBKR 报表
 
-在 IBKR Client Portal 的 Reports / Flex Queries 创建 **Activity Flex Query**，输出选 XML。需要以下段与字段（不是 Trade Confirmation）：
+在 IBKR Client Portal 的 Reports / Flex Queries 创建 **Activity Flex Query**。XML 字段更完整，是推荐格式；系统也接受 IBKR 的多区段 CSV（每段重复表头）。XML 需要以下段与字段（不是 Trade Confirmation）：
 
 | 段 | 字段 / 要求 |
 |---|---|
@@ -21,6 +21,8 @@
 | AccountInformation | currency（账户报告基准币种） |
 | OpenPositions | SUMMARY 明细；不要同时选 LOT 或资产小计。字段：conid、symbol、assetCategory、listingExchange、currency、fxRateToBase、position、markPrice、positionValue、costBasisMoney、multiplier；有 reportDate 时必须匹配 toDate |
 | CashReport / CashReportCurrency | endingCash；一个 BASE_SUMMARY 汇总。若仅有单一基准币种明细也可接受；多币种不能将明细和汇总相加。字段 toDate 如存在须匹配报表期末 |
+
+CSV 至少必须包含持仓段（Symbol、Quantity、CostBasisMoney、PositionValue、FifoPnlUnrealized、CurrencyPrimary、ReportDate）和唯一现金/活动汇总段（EndingCash、Dividends、Commissions、Deposit/Withdrawals、FromDate、ToDate）。成交和现金交易段可以为空，但表头必须保留，以区分“本期无记录”和“字段未导出”。CSV 不含合约、交易所、资产类别或 FX 时会明确降级数据质量；多币种持仓不会被静默相加。
 
 空账户也必须包含明确的 OpenPositions 空段和现金段；缺段不代表零持仓。多账户文件必须显式选择，不自动合并账户。报表包含原始个人信息，请保存在本机私有目录，不放入 Git 仓库、PR、日志或共享预览。
 
@@ -32,6 +34,7 @@
 
 ```bash
 python main.py --portfolio ibkr --ibkr-flex-file /path/to/activity-flex.xml --no-notify
+# CSV 使用相同入口：/path/to/activity-flex.csv
 ```
 
 多账户时增加 `--ibkr-account YOUR_ACCOUNT_ID`。这会覆盖本轮的 `--stocks` / STOCK_LIST，仅分析报表内支持的持仓；不会修改持久化股票列表。缺失/损坏文件直接报错，绝不回退到默认股票列表并假装是账户持仓。上述命令会调用现有分析模型，但 `--no-notify` 禁用本轮通知；没有发送任何 IBKR 交易。
@@ -57,7 +60,7 @@ CLI 多账户选择器只用于本机选取，不进入归一化快照、模型�
 
 成本及未实现损益使用报告成本和当期 FX，不声称衡量历史汇兑损益或总回报；缺少长期目标配置时不产生再平衡建议。本阶段 data_quality 固定 partial，limitations 显式披露这些限制。
 
-XML 仅接受 UTF-8、最大 5 MiB；禁用 DTD/实体，不执行报表内的内容或跳转。外部账号、持有人名称、自由文本和合约 ID 不进入响应/模型上下文。没有自动采集凭证或更改 GitHub Secrets。
+XML/CSV 仅接受 UTF-8、最大 5 MiB；XML 禁用 DTD/实体，不执行报表内的内容或跳转。CSV 必须是 IBKR 重复表头的多区段格式；重复持仓、日期不一致、盈亏无法与成本和市值核对时直接拒绝。外部账号、持有人名称、自由文本和合约 ID 不进入响应/模型上下文。没有自动采集凭证或更改 GitHub Secrets。
 
 ## 验证与回滚
 

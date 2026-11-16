@@ -22,7 +22,7 @@
 | OpenPositions | SUMMARY 明细；不要同时选 LOT 或资产小计。字段：conid、symbol、assetCategory、listingExchange、currency、fxRateToBase、position、markPrice、positionValue、costBasisMoney、multiplier；有 reportDate 时必须匹配 toDate |
 | CashReport / CashReportCurrency | endingCash；一个 BASE_SUMMARY 汇总。若仅有单一基准币种明细也可接受；多币种不能将明细和汇总相加。字段 toDate 如存在须匹配报表期末 |
 
-CSV 至少必须包含持仓段（Symbol、Quantity、CostBasisMoney、PositionValue、FifoPnlUnrealized、CurrencyPrimary、ReportDate）和唯一现金/活动汇总段（EndingCash、Dividends、Commissions、Deposit/Withdrawals、FromDate、ToDate）。成交和现金交易段可以为空，但表头必须保留，以区分“本期无记录”和“字段未导出”。CSV 不含合约、交易所、资产类别或 FX 时会明确降级数据质量；多币种持仓不会被静默相加。
+CSV 至少必须包含持仓段（Symbol、Quantity、CostBasisMoney、PositionValue、FifoPnlUnrealized、CurrencyPrimary、ReportDate）和唯一现金/活动汇总段（EndingCash、Dividends、Commissions、Deposit/Withdrawals、FromDate、ToDate）。成交和现金交易段可以为空，但表头必须保留，以区分“本期无记录”和“字段未导出”。CSV 不含合约、交易所、资产类别或 FX 时会明确降级数据质量，且不会将这些持仓自动标记为可用于个股分析；多币种持仓不会被静默相加。
 
 空账户也必须包含明确的 OpenPositions 空段和现金段；缺段不代表零持仓。多账户文件必须显式选择，不自动合并账户。报表包含原始个人信息，请保存在本机私有目录，不放入 Git 仓库、PR、日志或共享预览。
 

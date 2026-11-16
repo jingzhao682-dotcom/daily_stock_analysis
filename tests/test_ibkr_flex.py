@@ -42,6 +42,70 @@ def parse(root, **kw):
     return parse_report(xml(root), today=TODAY, **kw)
 
 
+
+def csv_report(*, duplicate=False, bad_pnl=False, omit_trade_header=False, omit_cash_header=False):
+    day = REPORT_DAY.strftime("%Y%m%d")
+    pnl = "199" if bad_pnl else "200"
+    rows = [
+        '"ClientAccountID","Symbol","TotalRealizedPnl","TotalUnrealizedPnl","TotalFifoPnl","ReportDate"',
+        f'"U_TEST_PRIVATE","QQQM","0","200","200","{day}"',
+        '"ClientAccountID","StartingCash","EndingCash","Dividends","Commissions","Deposit/Withdrawals","FromDate","ToDate"',
+        f'"U_TEST_PRIVATE","8000","8000","0","0","0","{day}","{day}"',
+        '"ClientAccountID","Symbol","Quantity","CostBasisMoney","PositionValue","FifoPnlUnrealized","CurrencyPrimary","ReportDate"',
+        f'"U_TEST_PRIVATE","QQQM","10","1800","2000","{pnl}","USD","{day}"',
+    ]
+    if duplicate:
+        rows.append(f'"U_TEST_PRIVATE","QQQM","10","1800","2000","200","USD","{day}"')
+    rows += [
+        '"ClientAccountID","Symbol","TradeDate","Quantity","TradePrice","IBCommission","Buy/Sell","CurrencyPrimary","ReportDate"',
+        '"ClientAccountID","Symbol","Date/Time","Amount","Type","CurrencyPrimary","ReportDate"',
+    ]
+    if omit_trade_header:
+        rows.remove('"ClientAccountID","Symbol","TradeDate","Quantity","TradePrice","IBCommission","Buy/Sell","CurrencyPrimary","ReportDate"')
+    if omit_cash_header:
+        rows.remove('"ClientAccountID","Symbol","Date/Time","Amount","Type","CurrencyPrimary","ReportDate"')
+    return ("\n".join(rows) + "\n").encode()
+
+
+def test_snapshot_has_one_consistent_currency_basis_without_account_identity():
+    value = parse(report())
+    assert value["reported_assets_total"] == 10000
+    assert value["total_cash"] == 8000
+    assert value["positions"][0]["weight_of_reported_assets_pct"] == 20
+    assert value["positions"][0]["unrealized_pnl_base"] == 200
+    assert value["as_of"] == REPORT_DAY.isoformat()
+    assert value["read_only"] is True and value["data_quality"] == "partial"
+    assert "U_TEST_PRIVATE" not in str(value)
+    assert "cash_plus_positions_not_broker_nav" in value["limitations"]
+    assert parse(report())["report_fingerprint"] == value["report_fingerprint"]
+
+
+def test_repeated_header_csv_matches_actual_flex_export_contract_without_identity():
+    value = parse_report(csv_report(), today=TODAY)
+    assert value["format"] == "csv" and value["as_of"] == REPORT_DAY.isoformat()
+    assert value["reported_assets_total"] == 10000
+    assert value["positions"][0]["avg_cost"] == 180
+    assert value["positions"][0]["mark_price"] == 200
+    assert value["positions"][0]["weight_of_reported_assets_pct"] == 20
+    assert value["activity"]["trade_rows"] == 0
+    assert value["activity"]["cash_transaction_rows"] == 0
+    assert "U_TEST_PRIVATE" not in str(value)
+    assert "csv_lacks_contract_exchange_asset_type_and_fx" in value["limitations"]
+
+
+@pytest.mark.parametrize("raw", [csv_report(duplicate=True), csv_report(bad_pnl=True)])
+def test_csv_duplicate_or_inconsistent_positions_fail_closed(raw):
+    with pytest.raises(IBKRFlexError):
+        parse_report(raw, today=TODAY)
+
+
+
+@pytest.mark.parametrize("raw", [csv_report(omit_trade_header=True), csv_report(omit_cash_header=True)])
+def test_csv_requires_trade_and_cash_transaction_section_headers(raw):
+    with pytest.raises(IBKRFlexError, match="preserve exactly one"):
+        parse_report(raw, today=TODAY)
+
+
 def test_snapshot_has_one_consistent_currency_basis_without_account_identity():
     value = parse(report())
     assert value["reported_assets_total"] == 10000

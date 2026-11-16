@@ -330,3 +330,4 @@ class IBKRFlexSnapshotResponse(BaseModel):
     reported_assets_total: float
     gross_exposure: float
     positions: List[IBKRFlexPosition]
+    activity: Optional[Dict[str, Any]] = None

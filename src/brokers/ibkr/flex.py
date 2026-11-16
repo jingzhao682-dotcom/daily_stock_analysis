@@ -7,9 +7,8 @@ No credentials, account identifiers or free-form report text enter the result.
 from __future__ import annotations
 
 import csv
-import io
-
 import hashlib
+import io
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -192,7 +191,6 @@ def parse_report(content: bytes, *, account: str | None = None, today: date | No
         "reported_assets_total": assets, "gross_exposure": gross,
         "positions": positions,
     }
-
 
 
 def _csv_number(row: dict[str, str], key: str) -> Decimal:
